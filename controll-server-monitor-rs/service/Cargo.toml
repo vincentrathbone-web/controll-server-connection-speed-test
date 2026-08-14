@@ -1,0 +1,14 @@
+[package]
+name = "service"
+version = "0.1.5"
+edition = "2021"
+
+[[bin]]
+name = "controll-server-monitor-service"
+path = "src/main.rs"
+
+[dependencies]
+common = { path = "../common" }
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+windows-service = "0.7"

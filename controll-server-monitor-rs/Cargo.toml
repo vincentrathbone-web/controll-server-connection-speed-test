@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = ["common", "service", "app/src-tauri"]
+
+[profile.release]
+opt-level = 2

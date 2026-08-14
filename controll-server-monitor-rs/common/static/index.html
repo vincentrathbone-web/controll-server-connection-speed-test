@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controll Server Monitor</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="csm-nav">
+    <span class="csm-nav-brand">Controll Server Monitor</span>
+    <a href="/" class="is-active">Dashboard</a>
+    <a href="/setup.html">Setup</a>
+</nav>
+
+<div class="csm-main">
+    <div class="csm-toolbar">
+        <div>
+            <h2 style="margin-bottom:2px">Site Condition</h2>
+            <p class="csm-description" style="margin-bottom:0">
+                Probes every registered site only while this page is open and the tab is active. Keep-alive pings run continuously in the background regardless of whether this page is open.
+            </p>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div class="csm-view-toggle" role="group" aria-label="View" id="csm-view-toggle" hidden>
+                <button type="button" id="csm-view-card-btn" class="csm-view-toggle-btn is-active">Card view</button>
+                <button type="button" id="csm-view-list-btn" class="csm-view-toggle-btn">List view</button>
+            </div>
+            <select id="csm-site-picker" class="csm-input" style="min-height:32px;width:auto" hidden></select>
+            <span id="csm-poll-status" class="csm-poll-status">Loading…</span>
+            <button id="csm-refresh-btn" class="csm-btn csm-btn-primary">Refresh Now</button>
+        </div>
+    </div>
+
+    <div id="csm-empty-state" class="csm-panel" hidden>
+        <p class="csm-empty">No sites registered yet. <a href="/setup.html">Add one in Setup</a> to start monitoring.</p>
+    </div>
+
+    <div class="csm-grid" id="csm-grid" hidden></div>
+
+    <div class="csm-list-view" id="csm-list-view" hidden>
+        <p class="csm-description">
+            Trend charts build up from probes taken during this browser session only — they start empty on page load and reset on refresh/navigation. Nothing is stored between visits.
+        </p>
+        <div class="csm-metric-row">
+            <div class="csm-metric-stat-box">
+                <div class="csm-metric-top-label">Current Disk Usage</div>
+                <div class="csm-metric-value" data-stat="disk">—</div>
+                <div class="csm-metric-detail" data-detail="disk"></div>
+                <div class="csm-metric-bottom-label">Disk Used</div>
+            </div>
+            <div class="csm-metric-chart-box">
+                <div class="csm-metric-chart-title">Disk Used</div>
+                <div class="csm-metric-chart" data-chart="disk"></div>
+            </div>
+        </div>
+        <div class="csm-metric-row">
+            <div class="csm-metric-stat-box">
+                <div class="csm-metric-top-label">Current CPU Load</div>
+                <div class="csm-metric-value" data-stat="cpu">—</div>
+                <div class="csm-metric-detail" data-detail="cpu"></div>
+                <div class="csm-metric-bottom-label">CPU Load</div>
+            </div>
+            <div class="csm-metric-chart-box">
+                <div class="csm-metric-chart-title">CPU Load</div>
+                <div class="csm-metric-chart" data-chart="cpu"></div>
+            </div>
+        </div>
+        <div class="csm-metric-row">
+            <div class="csm-metric-stat-box">
+                <div class="csm-metric-top-label">Current Memory Usage</div>
+                <div class="csm-metric-value" data-stat="mem">—</div>
+                <div class="csm-metric-detail" data-detail="mem"></div>
+                <div class="csm-metric-bottom-label">Memory Used</div>
+            </div>
+            <div class="csm-metric-chart-box">
+                <div class="csm-metric-chart-title">Memory Used</div>
+                <div class="csm-metric-chart" data-chart="mem"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="csm-panel" id="csm-keepalive-panel" style="margin-top:24px" hidden>
+        <h3 style="margin-bottom:4px">Keep-Alive</h3>
+        <p class="csm-description">Runs continuously in the background every 5 minutes regardless of whether this dashboard is open — this just shows the most recent results.</p>
+        <div style="overflow-x:auto">
+            <table class="csm-table" id="csm-keepalive-table">
+                <thead>
+                    <tr>
+                        <th>Site</th>
+                        <th>Status</th>
+                        <th>Last Ping</th>
+                        <th>Elapsed</th>
+                        <th>URL</th>
+                    </tr>
+                </thead>
+                <tbody id="csm-keepalive-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="/assets/api-base.js"></script>
+<script src="/assets/dashboard.js"></script>
+</body>
+</html>

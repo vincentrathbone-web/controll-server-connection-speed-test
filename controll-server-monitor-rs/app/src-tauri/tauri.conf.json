@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Controll Server Monitor",
+  "version": "0.1.5",
+  "identifier": "za.co.controll.server-monitor",
+  "build": {
+    "frontendDist": "../../common/static"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Controll Server Monitor",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "resources": ["bin/controll-server-monitor-service.exe"],
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh",
+        "installMode": "perMachine"
+      }
+    }
+  }
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setup — Controll Server Monitor</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="csm-nav">
+    <span class="csm-nav-brand">Controll Server Monitor</span>
+    <a href="/">Dashboard</a>
+    <a href="/setup.html" class="is-active">Setup</a>
+</nav>
+
+<div class="csm-main">
+    <h2>Registered Sites</h2>
+    <p class="csm-description">
+        Add each WordPress site running the Controll Server Connection Speed Test plugin. Copy the Endpoint URL and API Key
+        from that plugin's "Remote Monitoring API" panel (Server Speed Test admin page &rarr; scroll to the bottom).
+        Keep-Alive URL is optional — if left blank, the site's own home page (derived from the Endpoint URL) is pinged instead.
+    </p>
+
+    <div id="csm-notice" class="csm-notice" hidden></div>
+    <div id="csm-error" class="csm-error" hidden></div>
+
+    <div class="csm-panel">
+        <h3 id="csm-form-title">Add a Site</h3>
+        <form id="csm-site-form">
+            <input type="hidden" id="csm-form-id" value="">
+            <div class="csm-form-row">
+                <div class="csm-field">
+                    <label for="csm-label">Label</label>
+                    <input class="csm-input" type="text" id="csm-label" name="label" placeholder="e.g. Goldplat" required>
+                </div>
+                <div class="csm-field">
+                    <label for="csm-endpoint">Endpoint URL</label>
+                    <input class="csm-input" type="url" id="csm-endpoint" name="endpoint_url"
+                        placeholder="https://example.com/wp-json/csst/v1/stats" required>
+                </div>
+                <div class="csm-field">
+                    <label for="csm-apikey">API Key</label>
+                    <input class="csm-input" type="text" id="csm-apikey" name="api_key" required>
+                </div>
+                <div class="csm-field">
+                    <label for="csm-keepalive-url">Keep-Alive URL (optional)</label>
+                    <input class="csm-input" type="url" id="csm-keepalive-url" name="keep_alive_url"
+                        placeholder="Defaults to the Endpoint URL's site root">
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button type="submit" class="csm-btn csm-btn-primary" id="csm-submit-btn">Add Site</button>
+                <button type="button" id="csm-test-btn" class="csm-btn">Test Connection</button>
+                <button type="button" id="csm-cancel-btn" class="csm-btn" hidden>Cancel</button>
+                <span id="csm-test-result" class="csm-poll-status"></span>
+                <input type="file" id="csm-import-file" accept="application/json,.json" hidden>
+                <button type="button" id="csm-import-btn" class="csm-btn" style="margin-left:auto">Bulk Import (JSON)</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="csm-panel">
+        <h3 id="csm-sites-heading">Sites</h3>
+        <p class="csm-empty" id="csm-empty" hidden>No sites registered yet. Add one above.</p>
+        <div style="overflow-x:auto">
+            <table class="csm-table" id="csm-sites-table" hidden>
+                <thead>
+                    <tr>
+                        <th>Label</th>
+                        <th>Endpoint URL</th>
+                        <th>Keep-Alive</th>
+                        <th>Added</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="csm-sites-body"></tbody>
+            </table>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+            <button type="button" id="csm-export-btn" class="csm-btn">Export Sites (JSON)</button>
+            <span class="csm-description" style="margin:0">
+                Backs up every registered site's label, endpoint URL, API key, and keep-alive URL to a JSON file — use Bulk Import above to restore them after reinstalling Windows or setting up a new PC.
+            </span>
+        </div>
+    </div>
+</div>
+
+<script src="/assets/api-base.js"></script>
+<script src="/assets/setup.js"></script>
+</body>
+</html>

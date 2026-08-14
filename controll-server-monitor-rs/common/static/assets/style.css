@@ -1,0 +1,447 @@
+/*
+ * Controll Server Monitor (native) — shares the "Modernist" visual language
+ * with ServerPulse (the per-site plugin this app polls) and the PHP version
+ * of this dashboard, now served by a native Rust binary instead of PHP/Apache.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap');
+
+:root {
+  --csm-color-bg: #f3f2f2;
+  --csm-color-surface: #eae9e9;
+  --csm-color-text: #201e1d;
+  --csm-color-accent: #ec3013;
+  --csm-color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+
+  --csm-accent-100: #fff2ef;
+  --csm-accent-600: #dd2b0f;
+
+  --csm-neutral-200: #eae7e7;
+  --csm-neutral-800: #444141;
+
+  --csm-font-heading: "Archivo", system-ui, sans-serif;
+  --csm-font-heading-weight: 800;
+  --csm-font-body: "Archivo", system-ui, sans-serif;
+
+  --csm-space-2: 8px;
+  --csm-space-3: 12px;
+  --csm-space-4: 16px;
+  --csm-space-6: 24px;
+
+  --csm-radius: 2px;
+  --csm-shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
+
+  --csm-tier-good-color: oklch(0.42 0.14 152);
+  --csm-tier-good-bg: oklch(0.93 0.045 152);
+  --csm-tier-watch-color: oklch(0.48 0.16 70);
+  --csm-tier-watch-bg: oklch(0.93 0.06 70);
+  --csm-tier-bad-color: oklch(0.45 0.19 25);
+  --csm-tier-bad-bg: oklch(0.93 0.05 25);
+  --csm-tier-unknown-color: var(--csm-neutral-800);
+  --csm-tier-unknown-bg: var(--csm-neutral-200);
+}
+
+* , *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--csm-color-bg);
+  color: var(--csm-color-text);
+  font-family: var(--csm-font-body);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--csm-font-heading);
+  font-weight: var(--csm-font-heading-weight);
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--csm-space-2);
+}
+
+p { margin: 0 0 var(--csm-space-3); }
+
+.csm-description {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+  margin: 0 0 var(--csm-space-3);
+}
+
+a { color: var(--csm-color-accent); }
+
+.csm-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--csm-space-4);
+  padding: var(--csm-space-3) var(--csm-space-6);
+  background: var(--csm-color-surface);
+  border-bottom: 2px solid var(--csm-color-divider);
+}
+
+.csm-nav-brand {
+  font-family: var(--csm-font-heading);
+  font-weight: var(--csm-font-heading-weight);
+  font-size: 20px;
+  margin-right: auto;
+}
+
+.csm-nav a {
+  color: inherit;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.csm-nav a.is-active,
+.csm-nav a:hover {
+  color: var(--csm-color-accent);
+}
+
+.csm-main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--csm-space-6) var(--csm-space-4) 80px;
+}
+
+.csm-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--csm-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--csm-space-4);
+}
+
+.csm-panel {
+  background: var(--csm-color-surface);
+  border-radius: var(--csm-radius);
+  padding: var(--csm-space-4);
+  margin-bottom: var(--csm-space-4);
+}
+
+.csm-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--csm-space-2);
+  padding: var(--csm-space-3);
+  border-radius: var(--csm-radius);
+  background: color-mix(in srgb, var(--csm-color-bg) 60%, var(--csm-color-surface));
+  box-shadow: var(--csm-shadow-sm);
+}
+
+.csm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--csm-font-heading);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--csm-color-text);
+  background: transparent;
+  border: 1px solid var(--csm-color-divider);
+  border-radius: var(--csm-radius);
+  padding: 8px 16px;
+}
+
+.csm-btn:hover { background: color-mix(in srgb, var(--csm-color-text) 7%, transparent); }
+.csm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.csm-btn-primary {
+  background: var(--csm-color-accent);
+  border-color: var(--csm-color-accent);
+  color: #fff;
+}
+
+.csm-btn-primary:hover { background: var(--csm-accent-600); border-color: var(--csm-accent-600); color: #fff; }
+
+.csm-btn-danger {
+  color: var(--csm-tier-bad-color);
+  border-color: var(--csm-tier-bad-color);
+}
+
+.csm-field { margin-bottom: var(--csm-space-3); }
+
+.csm-field label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+  margin-bottom: 4px;
+}
+
+.csm-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--csm-color-text);
+  background: var(--csm-color-bg);
+  border: 1px solid var(--csm-color-divider);
+  border-radius: var(--csm-radius);
+}
+
+.csm-form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--csm-space-3);
+}
+
+.csm-error {
+  padding: 10px 12px;
+  background: var(--csm-tier-bad-bg);
+  color: var(--csm-tier-bad-color);
+  border-radius: var(--csm-radius);
+  margin-bottom: var(--csm-space-3);
+}
+
+.csm-notice {
+  padding: 10px 12px;
+  background: var(--csm-tier-good-bg);
+  color: var(--csm-tier-good-color);
+  border-radius: var(--csm-radius);
+  margin-bottom: var(--csm-space-3);
+}
+
+.csm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.csm-table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--csm-color-text) 60%, transparent);
+  padding: var(--csm-space-2);
+  border-bottom: 2px solid var(--csm-color-divider);
+}
+
+.csm-table td {
+  padding: var(--csm-space-2);
+  border-bottom: 1px solid var(--csm-color-divider);
+  vertical-align: middle;
+}
+
+.csm-keepalive-row {
+  cursor: pointer;
+}
+
+.csm-keepalive-row:hover td {
+  background: color-mix(in srgb, var(--csm-color-text) 4%, transparent);
+}
+
+.csm-keepalive-history-row td {
+  background: color-mix(in srgb, var(--csm-color-bg) 60%, var(--csm-color-surface));
+  padding: 0;
+}
+
+.csm-keepalive-history {
+  padding: var(--csm-space-2) var(--csm-space-3);
+}
+
+.csm-keepalive-history-table th,
+.csm-keepalive-history-table td {
+  font-size: 12px;
+  padding: 6px var(--csm-space-2);
+}
+
+.csm-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--csm-radius);
+  white-space: nowrap;
+}
+
+.csm-tier-good { color: var(--csm-tier-good-color); background: var(--csm-tier-good-bg); }
+.csm-tier-watch { color: var(--csm-tier-watch-color); background: var(--csm-tier-watch-bg); }
+.csm-tier-needs-attention { color: var(--csm-tier-bad-color); background: var(--csm-tier-bad-bg); }
+.csm-tier-offline { color: var(--csm-tier-bad-color); background: var(--csm-tier-bad-bg); }
+.csm-tier-unknown { color: var(--csm-tier-unknown-color); background: var(--csm-tier-unknown-bg); }
+
+.csm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--csm-space-3);
+}
+
+.csm-grid[hidden] { display: none; }
+
+.csm-site-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--csm-space-2);
+}
+
+.csm-site-card-title {
+  font-family: var(--csm-font-heading);
+  font-weight: var(--csm-font-heading-weight);
+  font-size: 16px;
+}
+
+.csm-site-card-meta {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--csm-color-text) 50%, transparent);
+}
+
+.csm-site-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.csm-site-stat-grid b {
+  display: block;
+  font-family: var(--csm-font-heading);
+  font-size: 15px;
+  font-weight: var(--csm-font-heading-weight);
+}
+
+.csm-stat-good { color: var(--csm-tier-good-color); }
+.csm-stat-watch { color: var(--csm-tier-watch-color); }
+.csm-stat-bad { color: var(--csm-tier-bad-color); }
+
+.csm-stat-detail {
+  display: block;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+}
+
+.csm-empty {
+  padding: var(--csm-space-4);
+  text-align: center;
+  color: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+}
+
+.csm-poll-status {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+}
+
+.csm-row-test-result {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+  margin-right: var(--csm-space-2, 8px);
+}
+
+.csm-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--csm-color-divider);
+  border-radius: var(--csm-radius);
+  overflow: hidden;
+}
+
+.csm-view-toggle[hidden] { display: none; }
+
+.csm-view-toggle-btn {
+  cursor: pointer;
+  font-family: var(--csm-font-heading);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--csm-color-text);
+  background: transparent;
+  border: none;
+  padding: 8px 14px;
+}
+
+.csm-view-toggle-btn + .csm-view-toggle-btn { border-left: 1px solid var(--csm-color-divider); }
+.csm-view-toggle-btn:hover { background: color-mix(in srgb, var(--csm-color-text) 7%, transparent); }
+.csm-view-toggle-btn.is-active { background: var(--csm-color-accent); color: #fff; }
+
+.csm-metric-row {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: var(--csm-space-3);
+  margin-bottom: var(--csm-space-3);
+}
+
+@media (max-width: 640px) {
+  .csm-metric-row { grid-template-columns: 1fr; }
+}
+
+.csm-metric-stat-box,
+.csm-metric-chart-box {
+  background: var(--csm-color-surface);
+  border-radius: var(--csm-radius);
+  padding: var(--csm-space-4);
+  box-shadow: var(--csm-shadow-sm);
+}
+
+.csm-metric-top-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--csm-color-text) 70%, transparent);
+  margin-bottom: 8px;
+}
+
+.csm-metric-value {
+  font-family: var(--csm-font-heading);
+  font-weight: var(--csm-font-heading-weight);
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.csm-metric-detail {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+  margin-bottom: 4px;
+  min-height: 1em;
+}
+
+.csm-metric-bottom-label {
+  font-size: 14px;
+  color: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+}
+
+.csm-metric-chart-title {
+  font-family: var(--csm-font-heading);
+  font-weight: var(--csm-font-heading-weight);
+  font-size: 15px;
+  margin-bottom: var(--csm-space-2);
+}
+
+.csm-metric-chart {
+  min-height: 160px;
+  display: flex;
+}
+
+.csm-metric-chart svg {
+  width: 100%;
+  height: 160px;
+  display: block;
+}
+
+.csm-chart-empty {
+  margin: auto;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--csm-color-text) 50%, transparent);
+}
+
+.csm-chart-grid {
+  stroke: var(--csm-color-divider);
+  stroke-width: 1;
+}
+
+.csm-chart-axis-label {
+  font-size: 10px;
+  fill: color-mix(in srgb, var(--csm-color-text) 55%, transparent);
+  font-family: var(--csm-font-body);
+}
+
+/* The [hidden] attribute must always win over a component's own `display`
+   value (e.g. .csm-btn/.csm-grid/.csm-view-toggle setting display:flex/grid) —
+   author styles otherwise silently beat the browser's default [hidden] rule. */
+[hidden] { display: none !important; }
