@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Controll Server Connection Speed Test
  * Description: Measures connection quality between your browser and this WordPress server (latency, jitter, download, upload).
- * Version: 1.7.8
+ * Version: 1.7.9
  * Author: Controll
  * License: GPL-2.0-or-later
  * Text Domain: controll-server-connection-speed-test
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 // Kept in sync with the "Version:" header above by package.ps1 on every release
 // bump, and surfaced in the admin screen and the remote monitoring API so a
 // central dashboard (or the desktop app) can tell which sites are outdated.
-define('CSST_PLUGIN_VERSION', '1.7.8');
+define('CSST_PLUGIN_VERSION', '1.7.9');
 
 final class CSST_Plugin {
     private const SLUG = 'controll-server-connection-speed-test';
@@ -126,13 +126,18 @@ final class CSST_Plugin {
 
         // Only ever act on requests actually aimed at our own namespace, so
         // this can't be used to slip past the lockdown for anything else.
-        $uri = isset($_SERVER['REQUEST_URI']) ? rawurldecode((string) $_SERVER['REQUEST_URI']) : '';
+        // Used only in a strpos() comparison below, never stored or output,
+        // so there is nothing here for a sanitizing function to protect.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $uri = isset($_SERVER['REQUEST_URI']) ? rawurldecode(wp_unslash((string) $_SERVER['REQUEST_URI'])) : '';
         if (strpos($uri, '/' . self::REST_NAMESPACE . '/') === false) {
             return $result;
         }
 
         $stored = self::get_api_key();
-        $provided = isset($_SERVER['HTTP_X_CSST_API_KEY']) ? (string) $_SERVER['HTTP_X_CSST_API_KEY'] : '';
+        // Compared only via hash_equals() below, never stored or output.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $provided = isset($_SERVER['HTTP_X_CSST_API_KEY']) ? wp_unslash((string) $_SERVER['HTTP_X_CSST_API_KEY']) : '';
 
         if ($stored !== '' && $provided !== '' && hash_equals($stored, $provided)) {
             return true;
@@ -177,9 +182,13 @@ final class CSST_Plugin {
     public static function ajax_save_cpanel_settings(): void {
         self::verify_request();
 
-        $username = sanitize_text_field((string) ($_POST['cpanel_username'] ?? ''));
-        $host = sanitize_text_field((string) ($_POST['cpanel_host'] ?? ''));
-        $token = trim((string) ($_POST['cpanel_api_token'] ?? ''));
+        // Nonce already verified above via self::verify_request().
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $username = sanitize_text_field(wp_unslash((string) ($_POST['cpanel_username'] ?? '')));
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $host = sanitize_text_field(wp_unslash((string) ($_POST['cpanel_host'] ?? '')));
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $token = sanitize_text_field(wp_unslash((string) ($_POST['cpanel_api_token'] ?? '')));
 
         update_option(self::CPANEL_USERNAME_OPTION, $username, false);
         update_option(self::CPANEL_HOST_OPTION, $host, false);
@@ -210,9 +219,13 @@ final class CSST_Plugin {
     public static function ajax_test_cpanel_quota(): void {
         self::verify_request();
 
-        $username = sanitize_text_field((string) ($_POST['cpanel_username'] ?? ''));
-        $host = sanitize_text_field((string) ($_POST['cpanel_host'] ?? ''));
-        $token = trim((string) ($_POST['cpanel_api_token'] ?? ''));
+        // Nonce already verified above via self::verify_request().
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $username = sanitize_text_field(wp_unslash((string) ($_POST['cpanel_username'] ?? '')));
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $host = sanitize_text_field(wp_unslash((string) ($_POST['cpanel_host'] ?? '')));
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $token = sanitize_text_field(wp_unslash((string) ($_POST['cpanel_api_token'] ?? '')));
 
         if ($username === '') {
             $username = (string) get_option(self::CPANEL_USERNAME_OPTION, '');
@@ -1340,6 +1353,9 @@ final class CSST_Plugin {
         if (function_exists('apache_setenv')) {
             @apache_setenv('no-gzip', '1');
         }
+        // Compression would skew the measured download throughput by shrinking
+        // the wire size of this endpoint's own random-byte payload.
+        // phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
         @ini_set('zlib.output_compression', '0');
 
         nocache_headers();
@@ -1353,6 +1369,9 @@ final class CSST_Plugin {
 
         while ($remaining > 0) {
             $current = min($remaining, $chunk_size);
+            // Raw binary throughput payload (Content-Type: application/octet-stream
+            // above) — an HTML-escaping function would corrupt it, not secure it.
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
             echo random_bytes($current);
             $remaining -= $current;
 
@@ -1811,7 +1830,7 @@ final class CSST_Plugin {
         self::verify_request();
 
         $site_url = home_url('/');
-        $host = (string) parse_url($site_url, PHP_URL_HOST);
+        $host = (string) wp_parse_url($site_url, PHP_URL_HOST);
         $slug = trim((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $host), '-');
         if ($slug === '') {
             $slug = self::SLUG;
@@ -1825,6 +1844,9 @@ final class CSST_Plugin {
         header('Content-Type: text/plain; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Content-Length: ' . (string) strlen($script));
+        // Raw PowerShell script content (Content-Type: text/plain, attachment
+        // download above) — an HTML-escaping function would corrupt the script.
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         echo $script;
         exit;
     }

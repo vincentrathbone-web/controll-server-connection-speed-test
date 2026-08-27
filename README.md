@@ -60,7 +60,7 @@ Shared hosting gives you no control plane: no host-level monitoring, disk quota 
 
 ## Features
 
-### 🔌 WordPress plugin — "ServerPulse" (`controll-server-connection-speed-test`, v1.7.8)
+### 🔌 WordPress plugin — "ServerPulse" (`controll-server-connection-speed-test`, v1.7.9)
 
 **Connection speed test** (real browser ↔ server, not a synthetic benchmark)
 - Latency, jitter, packet loss over 8 ping samples

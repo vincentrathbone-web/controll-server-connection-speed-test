@@ -1,3 +1,8 @@
+## [1.7.9] - 2026-08-27
+
+- Added `readme.txt` in WordPress.org's standard format (required for directory submission — `README.md` isn't read by WordPress.org at all).
+- Hardening pass driven by running WordPress.org's official Plugin Check tool against a fresh local install: switched `parse_url()` to `wp_parse_url()`; added `wp_unslash()` before sanitizing the cPanel-settings POST fields and the REST-lockdown-bypass filter's `$_SERVER` reads; documented (via `phpcs:ignore` + a comment) the two intentionally-unescaped raw-output endpoints — the speed-test download payload and the generated keep-alive `.ps1` script — where an HTML-escaping function would corrupt rather than secure the response. Cut Plugin Check's findings from several real errors down to zero errors and roughly 30 warnings, all in two documented, benign categories (nonce checks factored into a shared `verify_request()` helper the static scanner can't trace into; a couple of direct/uncached DB queries — one a deliberate uncached latency benchmark, one a read of a third-party plugin's table with no applicable caching API).
+
 ## [1.7.8] - 2026-08-27
 
 - Added a "Download Desktop App" link to the tab bar (top-right, next to Connection & Diagnostics / Process Monitor), pointing at the companion Controll Server Monitor project's latest GitHub release — ahead of submitting this plugin to the WordPress.org plugin directory, where the desktop app's own repo won't otherwise be discoverable from the plugin admin page.
