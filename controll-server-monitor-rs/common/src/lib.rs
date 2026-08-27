@@ -28,6 +28,18 @@ pub fn now_iso() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S.%3fZ").to_string()
 }
 
+/// Derives `scheme://host[:port]/` from an arbitrary URL string. Shared by
+/// the keep-alive origin fallback and the site-name lookup, both of which
+/// need the site's root from just its stats endpoint URL.
+pub fn derive_origin(url_str: &str) -> Option<String> {
+    let parsed = url::Url::parse(url_str).ok()?;
+    let port_suffix = match parsed.port() {
+        Some(port) => format!(":{port}"),
+        None => String::new(),
+    };
+    Some(format!("{}://{}{}/", parsed.scheme(), parsed.host_str()?, port_suffix))
+}
+
 // Frontend assets are compiled directly into the binary — this is meant to be
 // a single distributable service, not a folder of loose HTML/JS/CSS files that
 // could go missing or be edited out from under it.
@@ -129,6 +141,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/probe", get(api::probe).post(api::probe_adhoc))
         .route("/api/probe_all", get(api::probe_all))
+        .route("/api/site_name", get(api::site_name))
         .route("/api/keepalive/status", get(api::keepalive_status))
         .route("/api/keepalive/history", get(api::keepalive_history))
         .route("/assets/:file", get(serve_asset))

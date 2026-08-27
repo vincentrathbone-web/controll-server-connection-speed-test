@@ -69,6 +69,19 @@ pub struct ProbeQuery {
 }
 
 #[derive(Deserialize)]
+pub struct SiteNameQuery {
+    endpoint_url: String,
+}
+
+/// Backs the Setup screen's auto-fill-Label-on-blur convenience. Always
+/// responds 200 — a lookup failure is just `{ "name": null }`, not an error,
+/// since this is a best-effort suggestion the user can freely overwrite.
+pub async fn site_name(Query(query): Query<SiteNameQuery>) -> impl IntoResponse {
+    let name = prober::fetch_site_name(&query.endpoint_url).await;
+    Json(json!({ "name": name }))
+}
+
+#[derive(Deserialize)]
 pub struct AdHocProbeInput {
     endpoint_url: String,
     api_key: String,

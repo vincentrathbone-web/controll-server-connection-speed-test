@@ -60,7 +60,7 @@ Shared hosting gives you no control plane: no host-level monitoring, disk quota 
 
 ## Features
 
-### 🔌 WordPress plugin — "ServerPulse" (`controll-server-connection-speed-test`, v1.7.7)
+### 🔌 WordPress plugin — "ServerPulse" (`controll-server-connection-speed-test`, v1.7.8)
 
 **Connection speed test** (real browser ↔ server, not a synthetic benchmark)
 - Latency, jitter, packet loss over 8 ping samples
@@ -81,14 +81,16 @@ Shared hosting gives you no control plane: no host-level monitoring, disk quota 
 - Hourly disk-usage monitor; emails the site admin every hour while usage stays ≥ 90%, stops automatically once it drops
 - **Remote Monitoring API** — `GET /wp-json/csst/v1/stats`, API-key gated, read-only, no side effects on history
 - **Keep-Alive Script generator** — one click downloads a `.ps1` pre-baked with that site's URL, installs a Scheduled Task pinging it every 5 minutes
+- **Download Desktop App** link in the tab bar, pointing at this repo's latest release — so the companion app is discoverable from the plugin's own admin page, including once the plugin is distributed through the WordPress.org plugin directory rather than only from here
 
-### 🖥️ Desktop app + Windows Service (`controll-server-monitor-rs`, v0.1.5) — current
+### 🖥️ Desktop app + Windows Service (`controll-server-monitor-rs`, v0.1.6) — current
 
 - **Windows Service** (`ControllServerMonitor`) — owns the site registry, stats polling, and keep-alive pinging; starts at boot; runs whether or not anyone is logged in
 - **Tauri desktop app** — native window + tray icon; a thin client that only *looks at* the service
 - Card view (whole fleet at a glance) and List view (one site, live trend charts)
 - Continuous keep-alive ping of every site every 5 minutes, **30-day persisted history per site** (not just "the last result"), real HTTP status/error shown per ping, desktop notification on an OK→FAIL transition
 - Export/Import site registrations as JSON (native Save-As dialog inside the app) — rebuild a new PC without re-typing every API key
+- Setup screen suggests a site's Label automatically from its own WordPress Site Title, once you enter the Endpoint URL — no need to retype a name WordPress already knows
 - Tray menu shows live service state and lets you Start/Stop it (elevation-prompted only when it needs to be)
 
 ### 🗂️ PHP dashboard (`controll-server-monitor`) — superseded, still supported

@@ -1,3 +1,7 @@
+## [1.7.8] - 2026-08-27
+
+- Added a "Download Desktop App" link to the tab bar (top-right, next to Connection & Diagnostics / Process Monitor), pointing at the companion Controll Server Monitor project's latest GitHub release — ahead of submitting this plugin to the WordPress.org plugin directory, where the desktop app's own repo won't otherwise be discoverable from the plugin admin page.
+
 ## [1.7.7] - 2026-08-06
 
 - Fixed the Remote Monitoring API being unreachable on sites where a hardening plugin/snippet locks the whole REST API behind a login (e.g. the "Members" plugin's Private REST API option) — such plugins reject requests via `rest_authentication_errors` before our own API-key check ever runs, so no key would ever work. Added a filter that runs after theirs and clears their rejection only for `/csst/v1/` requests presenting a valid key, leaving the lockdown intact for every other route.

@@ -95,3 +95,32 @@ pub async fn probe_all(sites: Vec<Site>) -> Vec<ProbeResult> {
     results.sort_by_key(|r| r.id);
     results
 }
+
+/// Looks up a WordPress site's own configured name (Settings → General →
+/// Site Title) via the standard, unauthenticated `/wp-json/` index route, so
+/// the Setup screen can suggest a Label instead of making the user retype
+/// something WordPress already knows. Best-effort only: `None` on any
+/// failure (unreachable site, non-JSON response, REST API locked down,
+/// missing/blank `name` field) — the caller falls back to leaving the Label
+/// field for the user to fill in themselves.
+pub async fn fetch_site_name(endpoint_url: &str) -> Option<String> {
+    let origin = crate::derive_origin(endpoint_url)?;
+    let index_url = format!("{origin}wp-json/");
+
+    let response = client()
+        .get(&index_url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .ok()?;
+
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let body: serde_json::Value = response.json().await.ok()?;
+    body.get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}

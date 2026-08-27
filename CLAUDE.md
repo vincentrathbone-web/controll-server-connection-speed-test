@@ -3,9 +3,9 @@
 Three codebases that together monitor a fleet of WordPress sites. They are separate programs, not one app, and they talk over one HTTP contract.
 
 ```
-controll-server-connection-speed-test/   WordPress plugin (v1.7.7)  — the data source, runs ON each monitored site
+controll-server-connection-speed-test/   WordPress plugin (v1.7.8)  — the data source, runs ON each monitored site
 controll-server-monitor/                 PHP dashboard (v1.1.0)     — the original consumer, now superseded
-controll-server-monitor-rs/              Rust: Windows Service + Tauri app (v0.1.5) — the current consumer
+controll-server-monitor-rs/              Rust: Windows Service + Tauri app (v0.1.6) — the current consumer
 ```
 
 **The contract between them** is `GET /wp-json/csst/v1/stats`, authenticated with a per-site key in the `X-CSST-Api-Key` header. The plugin serves it; both dashboards consume it. Change the payload on one side and both consumers need checking.

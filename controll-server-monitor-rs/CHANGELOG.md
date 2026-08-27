@@ -2,6 +2,10 @@
 
 All notable changes to this app are documented here.
 
+## [0.1.6] - 2026-08-27
+
+- Setup screen now suggests a Label automatically from the target site's own WordPress Site Title, once the Endpoint URL field loses focus — looked up server-side via the standard, unauthenticated `/wp-json/` index route (new `GET /api/site_name` endpoint), since a direct browser fetch to an arbitrary third-party site would hit CORS. Never overwrites a Label already typed, and fails silently (leaves the field blank) if the site is unreachable or its REST API is locked down.
+
 ## [0.1.5] - 2026-08-06
 
 - Export Sites now shows a real native Windows "Save As" dialog when run from inside the desktop app (via `tauri-plugin-dialog` + a small custom `write_export_file` command), instead of silently dropping the file into the browser's default downloads folder. Opening the same Setup page directly in a browser tab still uses the plain download behavior, since a webpage can't summon a native dialog on its own.

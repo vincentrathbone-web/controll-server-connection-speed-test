@@ -111,13 +111,38 @@
   color: color-mix(in srgb, var(--csst-color-text) 45%, transparent);
 }
 
+/* — tab bar row (segmented tab control + companion-app link) — */
+.csst-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 var(--csst-space-4);
+}
+
+.csst-companion-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--csst-font-heading);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--csst-color-accent);
+  text-decoration: none;
+}
+
+.csst-companion-link:hover {
+  text-decoration: underline;
+}
+
 /* — segmented tab control — */
 .csst-tabs {
   display: inline-flex;
   overflow: hidden;
   border: 1px solid var(--csst-color-divider);
   border-radius: var(--csst-radius);
-  margin: 0 0 var(--csst-space-4);
+  margin: 0;
 }
 
 .csst-tab-button {

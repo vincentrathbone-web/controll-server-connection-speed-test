@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Controll Server Connection Speed Test
  * Description: Measures connection quality between your browser and this WordPress server (latency, jitter, download, upload).
- * Version: 1.7.7
+ * Version: 1.7.8
  * Author: Controll
  * License: GPL-2.0-or-later
  * Text Domain: controll-server-connection-speed-test
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 // Kept in sync with the "Version:" header above by package.ps1 on every release
 // bump, and surfaced in the admin screen and the remote monitoring API so a
 // central dashboard (or the desktop app) can tell which sites are outdated.
-define('CSST_PLUGIN_VERSION', '1.7.7');
+define('CSST_PLUGIN_VERSION', '1.7.8');
 
 final class CSST_Plugin {
     private const SLUG = 'controll-server-connection-speed-test';
@@ -339,13 +339,19 @@ final class CSST_Plugin {
                 )); ?></span>
             </nav>
 
-            <div class="csst-tabs" role="tablist" aria-label="CSST tabs">
-                <button id="csst-tab-overview" class="csst-tab-button is-active" data-target="csst-view-overview" role="tab" aria-selected="true">
-                    <?php echo esc_html__('Connection & Diagnostics', 'controll-server-connection-speed-test'); ?>
-                </button>
-                <button id="csst-tab-processes" class="csst-tab-button" data-target="csst-view-processes" role="tab" aria-selected="false">
-                    <?php echo esc_html__('Process Monitor', 'controll-server-connection-speed-test'); ?>
-                </button>
+            <div class="csst-tabs-row">
+                <div class="csst-tabs" role="tablist" aria-label="CSST tabs">
+                    <button id="csst-tab-overview" class="csst-tab-button is-active" data-target="csst-view-overview" role="tab" aria-selected="true">
+                        <?php echo esc_html__('Connection & Diagnostics', 'controll-server-connection-speed-test'); ?>
+                    </button>
+                    <button id="csst-tab-processes" class="csst-tab-button" data-target="csst-view-processes" role="tab" aria-selected="false">
+                        <?php echo esc_html__('Process Monitor', 'controll-server-connection-speed-test'); ?>
+                    </button>
+                </div>
+                <a href="https://github.com/vincentrathbone-web/controll-server-connection-speed-test/releases/latest" target="_blank" rel="noopener noreferrer" class="csst-companion-link">
+                    <svg class="csst-ico" width="16" height="16" viewBox="0 0 24 24"><path d="M12 3 V15 M7 10 L12 15 L17 10 M5 21 H19"></path></svg>
+                    <?php echo esc_html__('Download Desktop App', 'controll-server-connection-speed-test'); ?>
+                </a>
             </div>
 
             <div id="csst-view-overview" class="csst-tab-view">

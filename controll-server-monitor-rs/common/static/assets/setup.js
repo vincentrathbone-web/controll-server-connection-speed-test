@@ -390,6 +390,27 @@
     }
   });
 
+  // Suggests a Label from the target site's own WordPress Site Title (a
+  // server-side lookup, since a direct browser fetch to an arbitrary
+  // third-party site would just hit CORS) once the endpoint URL is entered.
+  // Never overwrites a Label the user already typed, and fails silently —
+  // this is a convenience, not something worth surfacing an error for.
+  endpointInput.addEventListener("blur", async function () {
+    const endpointUrl = endpointInput.value.trim();
+    if (!endpointUrl || labelInput.value.trim()) {
+      return;
+    }
+    try {
+      const response = await apiFetch(`/api/site_name?endpoint_url=${encodeURIComponent(endpointUrl)}`);
+      const data = await response.json();
+      if (data.name && !labelInput.value.trim()) {
+        labelInput.value = data.name;
+      }
+    } catch (error) {
+      // Best-effort only — leave the Label field for the user to fill in.
+    }
+  });
+
   cancelButton.addEventListener("click", resetForm);
 
   if (exportButton) {

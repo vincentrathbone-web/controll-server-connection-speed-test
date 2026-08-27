@@ -39,12 +39,7 @@ fn derive_keep_alive_url(site: &Site) -> Option<String> {
         }
     }
 
-    let parsed = url::Url::parse(&site.endpoint_url).ok()?;
-    let port_suffix = match parsed.port() {
-        Some(port) => format!(":{port}"),
-        None => String::new(),
-    };
-    Some(format!("{}://{}{}/", parsed.scheme(), parsed.host_str()?, port_suffix))
+    crate::derive_origin(&site.endpoint_url)
 }
 
 async fn ping_one(site: Site) -> KeepAliveStatus {
