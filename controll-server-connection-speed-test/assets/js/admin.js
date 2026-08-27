@@ -26,9 +26,182 @@
   const refreshProcessesButton = document.getElementById("csst-refresh-processes");
   const processesStatusEl = document.getElementById("csst-processes-status");
   const processesBodyEl = document.getElementById("csst-processes-body");
+  const downloadKeepAliveButton = document.getElementById("csst-download-keep-alive");
+  const pluginLoadStatusEl = document.getElementById("csst-plugin-load-status");
+  const pluginLoadBodyEl = document.getElementById("csst-plugin-load-body");
+  const bannerIconEl = document.getElementById("csst-banner-icon");
+  const bannerIconPathEl = document.getElementById("csst-banner-icon-path");
+  const bannerLabelEl = document.getElementById("csst-banner-label");
+  const bannerSummaryEl = document.getElementById("csst-banner-summary");
+  const specsGridEl = document.getElementById("csst-specs-grid");
+  const metricsGridEl = document.getElementById("csst-metrics-grid");
+  const historyTableEl = document.getElementById("csst-history-table");
+  const liveCpuValueEl = document.getElementById("csst-live-cpu-value");
+  const liveRamValueEl = document.getElementById("csst-live-ram-value");
+  const liveCpuChartEl = document.getElementById("csst-live-cpu-chart");
+  const liveRamChartEl = document.getElementById("csst-live-ram-chart");
+  const generateApiKeyButton = document.getElementById("csst-generate-api-key");
+  const revokeApiKeyButton = document.getElementById("csst-revoke-api-key");
+  const apiKeyInputEl = document.getElementById("csst-api-key");
+  const apiKeyStatusEl = document.getElementById("csst-api-key-status");
+  const cpanelUsernameInput = document.getElementById("csst-cpanel-username");
+  const cpanelTokenInput = document.getElementById("csst-cpanel-token");
+  const cpanelHostInput = document.getElementById("csst-cpanel-host");
+  const saveCpanelButton = document.getElementById("csst-save-cpanel");
+  const testCpanelButton = document.getElementById("csst-test-cpanel");
+  const clearCpanelButton = document.getElementById("csst-clear-cpanel");
+  const cpanelStatusEl = document.getElementById("csst-cpanel-status");
+  const refreshCpanelShellButton = document.getElementById("csst-refresh-cpanel-shell");
+  const cpanelShellStatusEl = document.getElementById("csst-cpanel-shell-status");
+  const duplicatorStatusEl = document.getElementById("csst-duplicator-status");
 
   let stopped = false;
   let historyRecords = [];
+  let historySortKey = null;
+  let historySortAsc = true;
+  let expandedHistoryIds = new Set();
+
+  function circleD(cx, cy, r) {
+    return `M${cx - r} ${cy} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0`;
+  }
+
+  const ICON_D = {
+    "check-circle": `${circleD(12, 12, 10)} M8 12 L11 15 L16 9`,
+    "alert-triangle": "M12 3 L2 21 H22 Z M12 9 L12 13 M12 17 L12 17.01",
+    "x-circle": `${circleD(12, 12, 10)} M9 9 L15 15 M15 9 L9 15`,
+    "help-circle": `${circleD(12, 12, 10)} M9.5 9 a2.5 2.5 0 1 1 3.5 2.3 c-1 0.4 -1 1.2 -1 1.7 M12 17 L12 17.01`,
+    globe: `${circleD(12, 12, 10)} M2 12 H22 M12 2 C8 6 8 18 12 22 M12 2 C16 6 16 18 12 22`,
+    cpu: "M4 4 H20 V20 H4 Z M9 9 H15 V15 H9 Z",
+    "memory-stick": "M2 10 H22 V18 H2 Z M6 10 V14 M10 10 V14 M14 10 V14 M18 10 V14",
+    "hard-drive": "M3 10 H21 V20 H3 Z M3 13 H21 M7 17 L7.01 17 M11 17 L11.01 17",
+    database: `M3 5 a9 3 0 0 0 18 0 a9 3 0 0 0 -18 0 M3 5 V19 A9 3 0 0 0 21 19 V5 M3 12 A9 3 0 0 0 21 12`,
+    zap: "M13 2 L3 14 L12 14 L11 22 L21 10 L12 10 Z",
+  };
+
+  const TIERS = {
+    good: { icon: "check-circle", label: "Good" },
+    watch: { icon: "alert-triangle", label: "Needs attention" },
+    "needs-attention": { icon: "x-circle", label: "Poor" },
+    unknown: { icon: "help-circle", label: "Unknown" },
+  };
+
+  function tierFor(rating) {
+    return TIERS[rating] || TIERS.unknown;
+  }
+
+  function tierClass(rating) {
+    return `csst-tier-${TIERS[rating] ? rating : "unknown"}`;
+  }
+
+  function tierBadgeHtml(rating) {
+    const t = tierFor(rating);
+    return `<span class="csst-tier ${tierClass(rating)}"><svg class="csst-ico" width="14" height="14" viewBox="0 0 24 24"><path d="${ICON_D[t.icon]}"></path></svg>${t.label}</span>`;
+  }
+
+  function renderBanner(diagnostics) {
+    const overall = diagnostics?.interpretation?.overall || {};
+    const rating = overall.rating || "unknown";
+    const t = tierFor(rating);
+    bannerIconEl.className = `csst-banner-icon ${tierClass(rating)}`;
+    bannerIconPathEl.setAttribute("d", ICON_D[t.icon] || "");
+    bannerLabelEl.textContent = t.label;
+    bannerSummaryEl.textContent = overall.summary || "No interpretation available.";
+  }
+
+  function renderSpecs(diagnostics) {
+    if (!diagnostics) {
+      return;
+    }
+    const disk = diagnostics.disk || {};
+    const diskLabel = disk.freeBytes !== null && disk.freeBytes !== undefined && disk.totalBytes
+      ? `${formatBytes(disk.freeBytes)} free of ${formatBytes(disk.totalBytes)}`
+      : "n/a";
+
+    const specs = [
+      { label: "WordPress", value: diagnostics.wpVersion || "n/a", icon: "globe" },
+      { label: "CPU Cores", value: diagnostics.cpuLogicalCores ?? "n/a", icon: "cpu" },
+      { label: "System RAM", value: formatBytes(diagnostics.totalSystemRamBytes), icon: "memory-stick" },
+      { label: "Memory Limit", value: diagnostics.memoryLimit || "n/a", icon: "hard-drive" },
+      { label: "Disk Space", value: diskLabel, icon: "hard-drive" },
+    ];
+
+    specsGridEl.innerHTML = specs
+      .map((s) => `
+        <div class="csst-card csst-spec-card">
+          <div class="csst-spec-icon"><svg class="csst-ico" width="18" height="18" viewBox="0 0 24 24"><path d="${ICON_D[s.icon]}"></path></svg></div>
+          <div>
+            <div class="csst-spec-value">${escapeHtml(s.value)}</div>
+            <div class="csst-spec-label">${escapeHtml(s.label)}</div>
+          </div>
+        </div>
+      `)
+      .join("");
+  }
+
+  function renderMetricsGrid(diagnostics) {
+    const interpretation = diagnostics?.interpretation || {};
+    const diskMonitorNote = formatDiskMonitorLine(diagnostics?.diskMonitor);
+
+    const diskPercent = diagnostics?.disk?.usedPercent;
+    const metrics = [
+      { label: "Database", icon: "database", key: "database", value: `${diagnostics?.dbQueryMs ?? "n/a"} ms round-trip` },
+      { label: "PHP Benchmark", icon: "zap", key: "phpBenchmark", value: `${diagnostics?.phpBenchmarkMs ?? "n/a"} ms` },
+      { label: "Load", icon: "cpu", key: "load", value: `${diagnostics?.cpuLogicalCores ?? "n/a"} logical cores` },
+      { label: "Memory", icon: "memory-stick", key: "memory", value: `${diagnostics?.memoryLimit ?? "n/a"} limit` },
+      { label: "Disk", icon: "hard-drive", key: "disk", value: diskPercent !== null && diskPercent !== undefined ? `${diskPercent}% used` : "n/a", extraMeta: diskMonitorNote },
+    ];
+
+    metricsGridEl.innerHTML = metrics
+      .map((m) => {
+        const info = interpretation[m.key] || {};
+        const rating = info.rating || "unknown";
+        const extraMeta = m.extraMeta ? `<div class="csst-card-meta">${escapeHtml(m.extraMeta)}</div>` : "";
+        return `
+          <div class="csst-card">
+            <div class="csst-metric-head">
+              <div class="csst-metric-head-left">
+                <div class="csst-spec-icon"><svg class="csst-ico" width="18" height="18" viewBox="0 0 24 24"><path d="${ICON_D[m.icon]}"></path></svg></div>
+                <span class="csst-metric-title">${escapeHtml(m.label)}</span>
+              </div>
+              ${tierBadgeHtml(rating)}
+            </div>
+            <p class="csst-card-body">${escapeHtml(info.summary || "")}</p>
+            <div class="csst-card-meta">${escapeHtml(m.value)}</div>
+            ${extraMeta}
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  // Mirrors CSST_Plugin::render_duplicator_status_html() on the PHP side so
+  // the card looks the same on first page load and after a diagnostics run.
+  function renderDuplicatorBackup(diagnostics) {
+    if (!duplicatorStatusEl) {
+      return;
+    }
+    const status = diagnostics?.duplicatorBackup;
+    if (!status) {
+      return;
+    }
+
+    if (!status.installed) {
+      duplicatorStatusEl.innerHTML = '<span id="csst-duplicator-badge" class="csst-tier csst-tier-unknown">Not detected</span> <span>Duplicator Pro was not detected on this site.</span>';
+      return;
+    }
+
+    const backup = status.lastBackup;
+    if (!backup) {
+      duplicatorStatusEl.innerHTML = '<span id="csst-duplicator-badge" class="csst-tier csst-tier-unknown">No backups</span> <span>Duplicator Pro is installed but no backups have run yet.</span>';
+      return;
+    }
+
+    const tier = backup.isSuccess ? "good" : (backup.isFailure ? "needs-attention" : "watch");
+    duplicatorStatusEl.innerHTML = `
+      <span id="csst-duplicator-badge" class="csst-tier csst-tier-${tier}">${escapeHtml(backup.statusLabel)}</span>
+      <span>"${escapeHtml(backup.name)}" — ${escapeHtml(backup.relativeTime || "unknown time")}</span>
+    `;
+  }
 
   function setStatus(text) {
     statusEl.textContent = text;
@@ -65,7 +238,24 @@
     if (Number.isNaN(date.getTime())) {
       return value;
     }
-    return date.toLocaleString();
+    return date.toLocaleString([], { hour12: false });
+  }
+
+  function sortedHistoryRecords() {
+    if (!historySortKey) {
+      return historyRecords;
+    }
+    const key = historySortKey;
+    const asc = historySortAsc;
+    return [...historyRecords].sort((a, b) => {
+      const av = key === "dt" ? toTimestamp(a) : Number(a[key] || 0);
+      const bv = key === "dt" ? toTimestamp(b) : Number(b[key] || 0);
+      return (av > bv ? 1 : av < bv ? -1 : 0) * (asc ? 1 : -1);
+    });
+  }
+
+  function rowId(row, index) {
+    return String(row.id || row.timestamp || index);
   }
 
   function renderHistory(records) {
@@ -73,25 +263,38 @@
     exportCsvButton.disabled = historyRecords.length === 0;
 
     if (historyRecords.length === 0) {
-      historyBodyEl.innerHTML = "<tr><td colspan=\"10\">No tests yet.</td></tr>";
+      historyBodyEl.innerHTML = "<tr><td colspan=\"6\">No tests yet.</td></tr>";
       renderWindowComparisons();
       return;
     }
 
-    const rows = historyRecords
-      .map((row) => {
+    const rows = sortedHistoryRecords()
+      .map((row, index) => {
+        const id = rowId(row, index);
+        const expanded = expandedHistoryIds.has(id);
         return `
-          <tr>
-            <td>${formatDate(String(row.timestamp || ""))}</td>
+          <tr class="csst-history-row" data-row-id="${escapeHtml(id)}">
+            <td>${escapeHtml(formatDate(String(row.timestamp || "")))}</td>
             <td>${Number(row.latencyMs || 0).toFixed(1)} ms</td>
-            <td>${Number(row.jitterMs || 0).toFixed(1)} ms</td>
-            <td>${Number(row.packetLossPct || 0).toFixed(1)}%</td>
-            <td>${Number(row.latencyP50Ms || 0).toFixed(1)} ms</td>
-            <td>${Number(row.latencyP95Ms || 0).toFixed(1)} ms</td>
             <td>${Number(row.downloadMbps || 0).toFixed(2)} Mbps</td>
             <td>${Number(row.uploadMbps || 0).toFixed(2)} Mbps</td>
-            <td>${String(row.qualityGrade || "n/a")}</td>
-            <td>${String(row.pingSamples || "-")}</td>
+            <td>${tierBadgeHtml(row.qualityGrade)}</td>
+            <td style="text-align:right">
+              <span class="csst-chev ${expanded ? "is-open" : ""}">
+                <svg class="csst-ico" width="16" height="16" viewBox="0 0 24 24"><path d="M6 9 L12 15 L18 9"></path></svg>
+              </span>
+            </td>
+          </tr>
+          <tr ${expanded ? "" : "hidden"}>
+            <td colspan="6">
+              <div class="csst-detail-grid">
+                <div><b>${Number(row.jitterMs || 0).toFixed(1)} ms</b>Jitter</div>
+                <div><b>${Number(row.packetLossPct || 0).toFixed(1)}%</b>Packet loss</div>
+                <div><b>${Number(row.latencyP50Ms || 0).toFixed(1)} ms</b>P50</div>
+                <div><b>${Number(row.latencyP95Ms || 0).toFixed(1)} ms</b>P95</div>
+                <div><b>${escapeHtml(row.pingSamples || "-")}</b>Ping samples</div>
+              </div>
+            </td>
           </tr>
         `;
       })
@@ -101,6 +304,21 @@
     renderWindowComparisons();
   }
 
+  function toggleHistoryRow(id) {
+    if (expandedHistoryIds.has(id)) {
+      expandedHistoryIds.delete(id);
+    } else {
+      expandedHistoryIds.add(id);
+    }
+    renderHistory(historyRecords);
+  }
+
+  function handleHistorySort(key) {
+    historySortAsc = historySortKey === key ? !historySortAsc : true;
+    historySortKey = key;
+    renderHistory(historyRecords);
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -108,6 +326,103 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  const LIVE_STATS_INTERVAL_MS = 2000;
+  const LIVE_STATS_MAX_SAMPLES = 60;
+  const liveCpuSamples = [];
+  const liveRamSamples = [];
+  let liveStatsTimerId = null;
+  let liveStatsInFlight = false;
+
+  function drawSparkline(canvas, samples) {
+    const ctx = canvas.getContext("2d");
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    const values = samples.filter((v) => typeof v === "number" && Number.isFinite(v));
+    if (values.length < 2) {
+      return;
+    }
+
+    const accentStyle = getComputedStyle(canvas).getPropertyValue("--csst-color-accent").trim() || "#ec3013";
+    const stepX = width / (LIVE_STATS_MAX_SAMPLES - 1);
+    const startIndex = LIVE_STATS_MAX_SAMPLES - samples.length;
+
+    ctx.beginPath();
+    let started = false;
+    samples.forEach((value, index) => {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return;
+      }
+      const x = (startIndex + index) * stepX;
+      const y = height - (Math.min(100, Math.max(0, value)) / 100) * height;
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.strokeStyle = accentStyle;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+  }
+
+  function pushSample(samples, value) {
+    samples.push(value);
+    while (samples.length > LIVE_STATS_MAX_SAMPLES) {
+      samples.shift();
+    }
+  }
+
+  async function pollLiveStats() {
+    if (liveStatsInFlight) {
+      return;
+    }
+    liveStatsInFlight = true;
+
+    try {
+      const response = await postForm("csst_live_stats", {});
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Live stats failed");
+      }
+
+      const cpuPercent = data.data?.cpuPercent;
+      const memoryPercent = data.data?.memoryPercent;
+
+      pushSample(liveCpuSamples, typeof cpuPercent === "number" ? cpuPercent : null);
+      pushSample(liveRamSamples, typeof memoryPercent === "number" ? memoryPercent : null);
+
+      liveCpuValueEl.textContent = typeof cpuPercent === "number" ? `${cpuPercent}%` : "n/a";
+      liveRamValueEl.textContent = typeof memoryPercent === "number" ? `${memoryPercent}%` : "n/a";
+
+      drawSparkline(liveCpuChartEl, liveCpuSamples);
+      drawSparkline(liveRamChartEl, liveRamSamples);
+    } catch (error) {
+      liveCpuValueEl.textContent = "error";
+      liveRamValueEl.textContent = "error";
+    } finally {
+      liveStatsInFlight = false;
+    }
+  }
+
+  function startLiveStats() {
+    if (liveStatsTimerId !== null) {
+      return;
+    }
+    pollLiveStats();
+    liveStatsTimerId = window.setInterval(pollLiveStats, LIVE_STATS_INTERVAL_MS);
+  }
+
+  function stopLiveStats() {
+    if (liveStatsTimerId !== null) {
+      window.clearInterval(liveStatsTimerId);
+      liveStatsTimerId = null;
+    }
   }
 
   function renderProcesses(processes) {
@@ -161,6 +476,65 @@
     } finally {
       refreshProcessesButton.disabled = false;
     }
+  }
+
+  function formatBytes(value) {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return "n/a";
+    }
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let unitIndex = 0;
+    let size = bytes;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+    return `${size.toFixed(2)} ${units[unitIndex]}`;
+  }
+
+  function renderPluginLoadHistory(records) {
+    const rows = Array.isArray(records) ? records : [];
+    pluginLoadStatusEl.textContent = rows.length === 0
+      ? "No diagnostics runs recorded yet."
+      : `${rows.length} diagnostics run(s) recorded.`;
+
+    if (rows.length === 0) {
+      pluginLoadBodyEl.innerHTML = "<tr><td colspan=\"8\">No diagnostics runs recorded yet.</td></tr>";
+      return;
+    }
+
+    const html = rows
+      .map((row) => {
+        const queryCount = row.queryCount === null || row.queryCount === undefined ? "n/a" : String(row.queryCount);
+        const queryTotalMs = row.queryTotalMs === null || row.queryTotalMs === undefined
+          ? "n/a"
+          : `${Number(row.queryTotalMs).toFixed(2)} ms`;
+        return `
+          <tr>
+            <td>${escapeHtml(formatDate(String(row.timestamp || "")))}</td>
+            <td>${escapeHtml(row.activePluginCount)}</td>
+            <td>${escapeHtml(queryCount)}</td>
+            <td>${escapeHtml(queryTotalMs)}</td>
+            <td>${escapeHtml(formatBytes(row.peakMemoryBytes))}</td>
+            <td>${Number(row.dbQueryMs || 0).toFixed(2)} ms</td>
+            <td>${Number(row.phpBenchmarkMs || 0).toFixed(2)} ms</td>
+            <td>${escapeHtml(row.overallRating || "n/a")}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    pluginLoadBodyEl.innerHTML = html;
+  }
+
+  async function loadPluginLoadHistory() {
+    const response = await postForm("csst_diagnostics_history_list", {});
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data?.data?.message || "Unable to load plugin load history");
+    }
+    renderPluginLoadHistory(data?.data?.history || []);
   }
 
   function activateTab(targetId) {
@@ -352,7 +726,6 @@
   async function runDiagnostics() {
     diagnosticsButton.disabled = true;
     diagnosticsStatusEl.textContent = "Running diagnostics...";
-    diagnosticsOutputEl.hidden = true;
 
     try {
       const response = await postForm("csst_server_diagnostics", {});
@@ -363,12 +736,206 @@
 
       diagnosticsStatusEl.textContent = formatDiagnosticsStatus(data.data);
       diagnosticsOutputEl.textContent = formatDiagnosticsOutput(data.data);
-      diagnosticsOutputEl.hidden = false;
+      renderBanner(data.data);
+      renderSpecs(data.data);
+      renderMetricsGrid(data.data);
+      renderDuplicatorBackup(data.data);
+      renderPluginLoadHistory(data.data?.pluginLoadHistory || []);
     } catch (error) {
       diagnosticsStatusEl.textContent = `Diagnostics error: ${error.message || "Unknown error"}`;
     } finally {
       diagnosticsButton.disabled = false;
     }
+  }
+
+  function downloadKeepAliveScript() {
+    const url = `${config.ajaxUrl}?action=csst_download_keep_alive_script&nonce=${encodeURIComponent(config.nonce || "")}`;
+    const link = document.createElement("a");
+    link.href = url;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  function applyApiKeyResult(data) {
+    const hasKey = Boolean(data?.apiKey);
+    apiKeyInputEl.value = data?.apiKey || "";
+    revokeApiKeyButton.disabled = !hasKey;
+    generateApiKeyButton.textContent = hasKey ? "Regenerate Key" : "Generate Key";
+    apiKeyStatusEl.textContent = hasKey
+      ? "Key generated. Copy it into Controll Server Monitor's setup screen now — it won't be shown in full again after you leave this page."
+      : "No API key configured. Remote monitoring requests will be rejected until one is generated.";
+  }
+
+  async function handleGenerateApiKey() {
+    generateApiKeyButton.disabled = true;
+    try {
+      const response = await postForm("csst_generate_api_key", {});
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Unable to generate API key");
+      }
+      applyApiKeyResult(data.data);
+    } catch (error) {
+      apiKeyStatusEl.textContent = `Error: ${error.message || "Unknown error"}`;
+    } finally {
+      generateApiKeyButton.disabled = false;
+    }
+  }
+
+  async function handleRevokeApiKey() {
+    revokeApiKeyButton.disabled = true;
+    try {
+      const response = await postForm("csst_revoke_api_key", {});
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Unable to revoke API key");
+      }
+      applyApiKeyResult(data.data);
+    } catch (error) {
+      apiKeyStatusEl.textContent = `Error: ${error.message || "Unknown error"}`;
+    }
+  }
+
+  async function handleSaveCpanel() {
+    saveCpanelButton.disabled = true;
+    cpanelStatusEl.textContent = "Saving...";
+    try {
+      const response = await postForm("csst_save_cpanel_settings", {
+        cpanel_username: cpanelUsernameInput.value.trim(),
+        cpanel_api_token: cpanelTokenInput.value.trim(),
+        cpanel_host: cpanelHostInput.value.trim(),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Unable to save cPanel settings");
+      }
+      cpanelTokenInput.value = "";
+      cpanelTokenInput.placeholder = data.data?.hasToken
+        ? "Saved — leave blank to keep it"
+        : "Paste token from cPanel > Manage API Tokens";
+      clearCpanelButton.disabled = !(data.data?.username && data.data?.host && data.data?.hasToken);
+      cpanelStatusEl.textContent = "Saved. Click Test Connection to verify, or re-run diagnostics to see it applied.";
+    } catch (error) {
+      cpanelStatusEl.textContent = `Error: ${error.message || "Unknown error"}`;
+    } finally {
+      saveCpanelButton.disabled = false;
+    }
+  }
+
+  async function handleTestCpanel() {
+    testCpanelButton.disabled = true;
+    cpanelStatusEl.textContent = "Testing...";
+    try {
+      const response = await postForm("csst_test_cpanel_quota", {
+        cpanel_username: cpanelUsernameInput.value.trim(),
+        cpanel_api_token: cpanelTokenInput.value.trim(),
+        cpanel_host: cpanelHostInput.value.trim(),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Connection test failed");
+      }
+      cpanelStatusEl.textContent = data.data?.unlimited
+        ? "Connected, but cPanel reports an unlimited quota — nothing to calculate a percentage against."
+        : `Connected. ${formatBytes(data.data?.usedBytes)} used of ${formatBytes(data.data?.totalBytes)} (${data.data?.usedPercent}%).`;
+    } catch (error) {
+      cpanelStatusEl.textContent = `Failed: ${error.message || "Unknown error"}`;
+    } finally {
+      testCpanelButton.disabled = false;
+    }
+  }
+
+  async function handleClearCpanel() {
+    if (!window.confirm("Disconnect cPanel quota lookup? Disk Space will go back to reporting total server filesystem.")) {
+      return;
+    }
+    clearCpanelButton.disabled = true;
+    try {
+      const response = await postForm("csst_clear_cpanel_settings", {});
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Unable to disconnect");
+      }
+      cpanelUsernameInput.value = "";
+      cpanelHostInput.value = "";
+      cpanelTokenInput.value = "";
+      cpanelTokenInput.placeholder = "Paste token from cPanel > Manage API Tokens";
+      cpanelStatusEl.textContent = "Disconnected — Disk Space currently reports total server filesystem.";
+    } catch (error) {
+      cpanelStatusEl.textContent = `Error: ${error.message || "Unknown error"}`;
+    } finally {
+      clearCpanelButton.disabled = false;
+    }
+  }
+
+  async function handleRefreshCpanelShell() {
+    const textEl = document.getElementById("csst-cpanel-shell-status-text");
+    refreshCpanelShellButton.disabled = true;
+    if (textEl) {
+      textEl.textContent = "Checking…";
+    }
+
+    try {
+      const response = await postForm("csst_refresh_cpanel_shell_quota", {});
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Auto-detection failed");
+      }
+      const d = data.data || {};
+      if (cpanelShellStatusEl) {
+        cpanelShellStatusEl.style.background = "var(--csst-tier-good-bg)";
+      }
+      if (textEl) {
+        textEl.textContent = d.unlimited
+          ? "Auto-detected, but this account has an unlimited quota — nothing to calculate a percentage against."
+          : `Auto-detected via local system access — no configuration needed. ${formatBytes(d.usedBytes)} used of ${formatBytes(d.totalBytes)} (${d.usedPercent}%). Last checked just now.`;
+      }
+    } catch (error) {
+      if (cpanelShellStatusEl) {
+        cpanelShellStatusEl.style.background = "var(--csst-tier-warn-bg)";
+      }
+      if (textEl) {
+        textEl.textContent = `Not auto-detected on this host: ${error.message || "Unknown error"} Configure manually below as a fallback.`;
+      }
+    } finally {
+      refreshCpanelShellButton.disabled = false;
+    }
+  }
+
+  function handleCopyClick(event) {
+    const button = event.target.closest(".csst-copy-btn");
+    if (!button) {
+      return;
+    }
+    const targetId = button.getAttribute("data-copy-target");
+    const input = document.getElementById(targetId);
+    if (!input || !input.value) {
+      return;
+    }
+    navigator.clipboard.writeText(input.value).then(() => {
+      const original = button.textContent;
+      button.textContent = "Copied";
+      window.setTimeout(() => {
+        button.textContent = original;
+      }, 1500);
+    });
+  }
+
+  function handleToggleVisibilityClick(event) {
+    const button = event.target.closest(".csst-toggle-visibility-btn");
+    if (!button) {
+      return;
+    }
+    const targetId = button.getAttribute("data-target");
+    const input = document.getElementById(targetId);
+    if (!input) {
+      return;
+    }
+    const isHidden = input.type === "password";
+    input.type = isHidden ? "text" : "password";
+    button.textContent = isHidden ? "Hide" : "Show";
   }
 
   async function postForm(action, extraFields) {
@@ -515,26 +1082,22 @@
     return `Diagnostics completed. Overall server rating: ${overall.rating}.`;
   }
 
-  function formatDiagnosticsOutput(diagnostics) {
-    const interpretation = diagnostics?.interpretation || {};
-    const lines = [
-      `Overall: ${interpretation?.overall?.rating || "n/a"}`,
-      `${interpretation?.overall?.summary || "No interpretation available."}`,
-      "",
-      `Database: ${interpretation?.database?.rating || "n/a"}`,
-      `${interpretation?.database?.summary || ""}`,
-      `PHP Benchmark: ${interpretation?.phpBenchmark?.rating || "n/a"}`,
-      `${interpretation?.phpBenchmark?.summary || ""}`,
-      `Load: ${interpretation?.load?.rating || "n/a"}`,
-      `${interpretation?.load?.summary || ""}`,
-      `Memory: ${interpretation?.memory?.rating || "n/a"}`,
-      `${interpretation?.memory?.summary || ""}`,
-      "",
-      "Raw Metrics:",
-      JSON.stringify(diagnostics, null, 2),
-    ];
+  function formatDiskMonitorLine(diskMonitor) {
+    if (!diskMonitor || !diskMonitor.checkedAt) {
+      return "Automated hourly disk monitoring is enabled; first check has not run yet.";
+    }
+    const percent = diskMonitor.usedPercent !== null && diskMonitor.usedPercent !== undefined
+      ? `${diskMonitor.usedPercent}%`
+      : "n/a";
+    if (diskMonitor.alertActive) {
+      return `ALERT ACTIVE — last checked ${diskMonitor.checkedAt} at ${percent} used. Emailed ${diskMonitor.alertCount} time(s), last at ${diskMonitor.lastAlertAt || "n/a"}.`;
+    }
+    return `Last checked ${diskMonitor.checkedAt} at ${percent} used. No alert active.`;
+  }
 
-    return lines.join("\n");
+  function formatDiagnosticsOutput(diagnostics) {
+    const { interpretation: _omit, ...rawMetrics } = diagnostics || {};
+    return JSON.stringify(rawMetrics, null, 2);
   }
 
   async function runDownloadWorker(endTime, chunkBytes) {
@@ -722,6 +1285,17 @@
   exportCsvButton.addEventListener("click", exportHistoryAsCsv);
   diagnosticsButton.addEventListener("click", runDiagnostics);
   refreshProcessesButton.addEventListener("click", loadProcesses);
+  downloadKeepAliveButton.addEventListener("click", downloadKeepAliveScript);
+  generateApiKeyButton.addEventListener("click", handleGenerateApiKey);
+  revokeApiKeyButton.addEventListener("click", handleRevokeApiKey);
+  saveCpanelButton.addEventListener("click", handleSaveCpanel);
+  testCpanelButton.addEventListener("click", handleTestCpanel);
+  clearCpanelButton.addEventListener("click", handleClearCpanel);
+  if (refreshCpanelShellButton) {
+    refreshCpanelShellButton.addEventListener("click", handleRefreshCpanelShell);
+  }
+  document.addEventListener("click", handleCopyClick);
+  document.addEventListener("click", handleToggleVisibilityClick);
   tabButtons.forEach((button) => {
     button.addEventListener("click", function () {
       const targetId = button.getAttribute("data-target");
@@ -731,7 +1305,42 @@
     });
   });
 
+  historyTableEl.querySelector("thead").addEventListener("click", function (event) {
+    const th = event.target.closest("th[data-sort]");
+    if (th) {
+      handleHistorySort(th.getAttribute("data-sort"));
+    }
+  });
+
+  historyBodyEl.addEventListener("click", function (event) {
+    const row = event.target.closest("tr.csst-history-row");
+    if (row) {
+      toggleHistoryRow(row.getAttribute("data-row-id"));
+    }
+  });
+
   loadHistory().catch((error) => {
     setStatus(`History error: ${error.message || "Unable to load history"}`);
   });
+
+  loadPluginLoadHistory().catch((error) => {
+    pluginLoadStatusEl.textContent = `Plugin load history error: ${error.message || "Unable to load history"}`;
+  });
+
+  runDiagnostics().catch(() => {
+    /* runDiagnostics reports its own errors via diagnosticsStatusEl */
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      stopLiveStats();
+    } else {
+      startLiveStats();
+    }
+  });
+  window.addEventListener("pagehide", stopLiveStats);
+
+  if (!document.hidden) {
+    startLiveStats();
+  }
 })();

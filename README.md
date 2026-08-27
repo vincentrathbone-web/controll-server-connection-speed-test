@@ -119,12 +119,12 @@ This system was built entirely against a real shared-hosting/Windows environment
 
 ## Getting started
 
-1. **Install the plugin** on every WordPress site you want to monitor — see [`controll-server-connection-speed-test/README.md`](controll-server-connection-speed-test/README-DADDYDUDEPC11.md). Generate an API key from its **Remote Monitoring API** panel.
+1. **Install the plugin** on every WordPress site you want to monitor — see [`controll-server-connection-speed-test/README.md`](controll-server-connection-speed-test/README.md). Generate an API key from its **Remote Monitoring API** panel.
 2. **Install the desktop app** — grab the latest installer from [Releases](https://github.com/vincentrathbone-web/controll-server-connection-speed-test/releases/latest), run it (accept the UAC prompt — it registers the Windows Service), then register each site in **Setup** using the endpoint URL + API key from step 1.
 3. *(Optional, no companion app)* On any individual site, use **Keep Server Awake → Download Keep-Alive Script** from the plugin's admin page instead, if you don't want to run the desktop app on that machine.
 
 Full details, requirements, and data locations are in each component's own README:
-[Plugin](controll-server-connection-speed-test/README-DADDYDUDEPC11.md) · [Desktop app](controll-server-monitor-rs/README.md) · [PHP dashboard](controll-server-monitor/README.md)
+[Plugin](controll-server-connection-speed-test/README.md) · [Desktop app](controll-server-monitor-rs/README.md) · [PHP dashboard](controll-server-monitor/README.md)
 
 ## Building from source
 

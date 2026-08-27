@@ -76,6 +76,7 @@ $excludePatterns = @(
     'CLAUDE.md', 'chat.log', 'ai-instructions.md', '.instructions.md',
     '.claude/*', '.qwen/*', '.sixth/*',
     'package.ps1', 'package.json', 'package-lock.json',
+    'keep-alive.ps1', 'keep-alive.log',
     'webpack.config.js', 'node_modules/*', 'src/*',
     'plugin.md', 'packaging.md', 'CHANGELOG.md',
     '.git/*', '.gitignore', '.vscode*'
