@@ -1,0 +1,65 @@
+name: Package WordPress Plugin
+
+# Manual only — packages the currently committed version of
+# controll-server-connection-speed-test/ via its own package.ps1 -NoBump
+# (strips UTF-8 BOMs, excludes dev-only files, verifies a single
+# correctly-named root folder inside the zip) and publishes it as its own
+# GitHub Release, tagged plugin-v<version> — kept separate from the desktop
+# app's v<version> tags, since the plugin and the desktop app version
+# independently of each other. Bump the version and add a CHANGELOG.md
+# entry in a normal commit first; this workflow only packages and publishes
+# whatever is already committed.
+# Runs on ubuntu-latest via pwsh (preinstalled on GitHub's Linux runners) —
+# this is packaging, not a native build, so there's no Windows-runner
+# minute multiplier to worry about.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: controll-server-connection-speed-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package plugin
+        shell: pwsh
+        run: ./package.ps1 -NoBump
+
+      - name: Read plugin version and zip path
+        id: version
+        shell: pwsh
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          "tag=plugin-v$($pkg.version)" >> $env:GITHUB_OUTPUT
+          "version=$($pkg.version)" >> $env:GITHUB_OUTPUT
+          "zip=controll-server-connection-speed-test/$($pkg.name)-$($pkg.version).zip" >> $env:GITHUB_OUTPUT
+
+      # Pulls this version's own entry out of CHANGELOG.md for the release
+      # body, same approach build-windows.yml uses for the desktop app.
+      - name: Extract changelog entry for this version
+        shell: bash
+        run: |
+          awk -v ver="${{ steps.version.outputs.version }}" '
+            BEGIN { target = "## [" ver "]" }
+            index($0, target) == 1 { found=1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [ ! -s release-notes.md ] || ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "_No CHANGELOG.md entry found for ${{ steps.version.outputs.tag }}._" > release-notes.md
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "WordPress Plugin ${{ steps.version.outputs.version }}"
+          files: ${{ steps.version.outputs.zip }}
+          body_path: controll-server-connection-speed-test/release-notes.md
