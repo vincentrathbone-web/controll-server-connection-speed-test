@@ -77,6 +77,27 @@ jobs:
         run: |
           version=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Pulls this version's own entry out of CHANGELOG.md so the release body
+      # says what's actually in it, instead of GitHub's generate_release_notes
+      # default (just a bare commit-comparison link — there are no PRs in this
+      # repo's history for it to summarize). Falls back to a plain notice if a
+      # release is ever cut for a version with no changelog entry yet, so the
+      # body is never blank.
+      - name: Extract changelog entry for this version
+        shell: bash
+        run: |
+          awk -v ver="${{ steps.version.outputs.version }}" '
+            BEGIN { target = "## [" ver "]" }
+            index($0, target) == 1 { found=1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [ ! -s release-notes.md ] || ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "_No CHANGELOG.md entry found for ${{ steps.version.outputs.tag }}._" > release-notes.md
+          fi
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -84,4 +105,4 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           files: ${{ steps.installer.outputs.path }}
-          generate_release_notes: true
+          body_path: controll-server-monitor-rs/release-notes.md
