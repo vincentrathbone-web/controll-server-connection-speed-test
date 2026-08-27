@@ -1,0 +1,87 @@
+name: Build Windows Installer
+
+# Manual or tag-triggered only (never on every push) — this is a private
+# repo, so Actions minutes come out of the account's monthly free quota,
+# and Windows runners consume that quota at a 2x multiplier.
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: controll-server-monitor-rs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: controll-server-monitor-rs -> target
+
+      # Installs a prebuilt tauri-cli binary instead of compiling one from
+      # source (`cargo install tauri-cli`), which saves several minutes.
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install Tauri CLI
+        shell: bash
+        run: cargo binstall tauri-cli --no-confirm
+
+      - name: Build Windows service
+        run: cargo build --release -p service
+
+      # The installer ships the service binary as a Tauri resource (see
+      # tauri.conf.json's bundle.resources), same as the local build.ps1 does.
+      - name: Stage service binary as Tauri resource
+        shell: bash
+        run: |
+          mkdir -p app/src-tauri/bin
+          cp target/release/controll-server-monitor-service.exe app/src-tauri/bin/
+
+      - name: Build Tauri Windows installer
+        run: cargo tauri build --config app/src-tauri/tauri.conf.json
+
+      - name: Locate NSIS installer
+        id: installer
+        shell: bash
+        run: |
+          match=$(find target/release/bundle/nsis -maxdepth 1 -name '*.exe' | head -n1)
+          if [ -z "$match" ]; then
+            echo "No .exe found under target/release/bundle/nsis" >&2
+            exit 1
+          fi
+          echo "path=controll-server-monitor-rs/$match" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$match")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.installer.outputs.name }}
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+
+      # Read the app version straight from tauri.conf.json so the Release
+      # tag always matches what was actually built, whether this run came
+      # from a real tag push or a manual dispatch (no pre-existing git tag
+      # required either way — softprops/action-gh-release creates one).
+      - name: Read app version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          files: ${{ steps.installer.outputs.path }}
+          generate_release_notes: true
