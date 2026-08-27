@@ -146,3 +146,7 @@ WordPress plugin and PHP dashboard releases use their own `package.ps1` — see 
 - API keys are stored in plaintext (`wp_options` on the plugin side, SQLite on the dashboard side) — treat both as sensitive. The PHP dashboard ships `.htaccess` denials on its data/includes folders and has no login of its own; it's built for local, single-operator use.
 - The Rust service's HTTP API binds to `127.0.0.1` only — never reachable off-machine.
 - No automated test suite exists in any of the three codebases. Everything has been verified by running it for real — manual testing is the standard here, not an oversight.
+
+## License
+
+[GPL-2.0-or-later](LICENSE) — matching the WordPress plugin's own license header, consistent across all three components.
