@@ -2,6 +2,14 @@
 
 All notable changes to this app are documented here.
 
+## [0.1.7] - 2026-08-29
+
+- The Windows Service is now hardened to reliably come back after a reboot or a crash:
+  - `service.exe install` is idempotent — on an upgrade it reconfigures the existing service in place (reasserting **Automatic** / boot start and refreshing the binary path) instead of failing with "service already exists", which the installer previously surfaced as a false "could not register" error. An older install registered with a non-boot start type is now corrected on upgrade.
+  - The "delayed start" flag is explicitly cleared, so the service starts *during* boot rather than a couple of minutes after.
+  - Recovery actions are configured: if the service ever exits unexpectedly — including a failed start at boot — the SCM restarts it (after 5s, then 15s, then every 60s; failure count resets after a clean day). Non-zero exits count as failures too, not just hard crashes.
+  - `install` now starts the service itself, so it no longer depends on the installer's separate `sc start` step.
+
 ## [0.1.6] - 2026-08-27
 
 - Setup screen now suggests a Label automatically from the target site's own WordPress Site Title, once the Endpoint URL field loses focus — looked up server-side via the standard, unauthenticated `/wp-json/` index route (new `GET /api/site_name` endpoint), since a direct browser fetch to an arbitrary third-party site would hit CORS. Never overwrites a Label already typed, and fails silently (leaves the field blank) if the site is unreachable or its REST API is locked down.

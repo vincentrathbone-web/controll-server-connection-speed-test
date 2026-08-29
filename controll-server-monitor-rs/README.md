@@ -49,6 +49,8 @@ Right-click the tray icon. The menu shows the service's live state (running / st
 
 Starting and stopping a service requires elevation, so those two items trigger a UAC prompt — the app itself runs unelevated. Reading the state does not, so the menu stays accurate without prompting. State is polled every few seconds, so changes made elsewhere (services.msc, a crash) show up too.
 
+The service is registered as **Automatic** (start type `SERVICE_AUTO_START`), so Windows starts it during boot, before anyone logs in — no need to open the app. It also has recovery actions set: if it exits unexpectedly, or fails to start at boot, the Service Control Manager restarts it automatically (5s, then 15s, then every 60s). Running `install` again — e.g. a version upgrade — re-applies all of this to the existing service.
+
 Equivalently, from an elevated prompt:
 
 ```powershell

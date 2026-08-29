@@ -1,18 +1,26 @@
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::sync::mpsc;
 use std::time::Duration;
 
 use windows_service::{
     define_windows_service,
     service::{
-        ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode,
+        ServiceAccess, ServiceAction, ServiceActionType, ServiceControl, ServiceControlAccept,
+        ServiceErrorControl, ServiceExitCode, ServiceFailureActions, ServiceFailureResetPeriod,
         ServiceInfo, ServiceStartType, ServiceState, ServiceStatus, ServiceType,
     },
     service_control_handler::{self, ServiceControlHandlerResult},
     service_dispatcher,
     service_manager::{ServiceManager, ServiceManagerAccess},
 };
+
+// ERROR_SERVICE_DOES_NOT_EXIST — returned by OpenServiceW when the service is not
+// yet registered (the normal case on a first install).
+const ERROR_SERVICE_DOES_NOT_EXIST: i32 = 1060;
+// ERROR_SERVICE_ALREADY_RUNNING — returned by StartServiceW when the service is
+// already up (e.g. re-running `install` over a working install).
+const ERROR_SERVICE_ALREADY_RUNNING: i32 = 1056;
 
 const SERVICE_NAME: &str = "ControllServerMonitor";
 const SERVICE_DISPLAY_NAME: &str = "Controll Server Monitor";
@@ -131,7 +139,10 @@ async fn serve() {
 }
 
 fn install_service() -> windows_service::Result<()> {
-    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CREATE_SERVICE)?;
+    let manager = ServiceManager::local_computer(
+        None::<&str>,
+        ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
+    )?;
 
     let exe_path = env::current_exe().expect("failed to resolve own exe path");
 
@@ -139,6 +150,9 @@ fn install_service() -> windows_service::Result<()> {
         name: OsString::from(SERVICE_NAME),
         display_name: OsString::from(SERVICE_DISPLAY_NAME),
         service_type: ServiceType::OWN_PROCESS,
+        // AutoStart => SERVICE_AUTO_START: the SCM starts it during system boot,
+        // before any user logs in. This is the setting that makes monitoring
+        // survive a reboot.
         start_type: ServiceStartType::AutoStart,
         error_control: ServiceErrorControl::Normal,
         executable_path: exe_path,
@@ -148,10 +162,80 @@ fn install_service() -> windows_service::Result<()> {
         account_password: None,
     };
 
-    let service = manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG)?;
+    // Make install idempotent. On an upgrade the service already exists, and
+    // `create_service` would fail with ERROR_SERVICE_EXISTS — which the NSIS
+    // installer then surfaces as a scary "could not register" dialog even though
+    // monitoring is fine. Worse, an older install could have been registered
+    // with a non-boot start type that a plain re-create would never correct.
+    // So: reconfigure it in place if present, create it otherwise.
+    let access = ServiceAccess::CHANGE_CONFIG | ServiceAccess::START | ServiceAccess::QUERY_STATUS;
+    let service = match manager.open_service(SERVICE_NAME, access) {
+        Ok(existing) => {
+            existing.change_config(&service_info)?;
+            println!("Service '{SERVICE_DISPLAY_NAME}' already registered — configuration refreshed.");
+            existing
+        }
+        Err(windows_service::Error::Winapi(e))
+            if e.raw_os_error() == Some(ERROR_SERVICE_DOES_NOT_EXIST) =>
+        {
+            let created = manager.create_service(&service_info, access)?;
+            println!("Service '{SERVICE_DISPLAY_NAME}' installed.");
+            created
+        }
+        Err(other) => return Err(other),
+    };
+
     service.set_description(SERVICE_DESCRIPTION)?;
 
-    println!("Service '{SERVICE_DISPLAY_NAME}' installed. Start it with: sc start {SERVICE_NAME}");
+    // Explicitly clear any "delayed" flag a previous install might have set, so
+    // the service comes up during boot rather than a couple of minutes after.
+    service.set_delayed_auto_start(false)?;
+
+    // If the service ever exits unexpectedly — including a failed start at boot
+    // (network stack not ready, disk still spinning up) — have the SCM bring it
+    // back on its own rather than leaving the fleet unmonitored until someone
+    // notices. Retry after 5s, then 15s, then every 60s; forget the failure
+    // count after a clean day.
+    service.update_failure_actions(ServiceFailureActions {
+        reset_period: ServiceFailureResetPeriod::After(Duration::from_secs(60 * 60 * 24)),
+        reboot_msg: None,
+        command: None,
+        actions: Some(vec![
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(5),
+            },
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(15),
+            },
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(60),
+            },
+        ]),
+    })?;
+    // Treat a non-zero exit / failed start as a failure too, not just a crash.
+    service.set_failure_actions_on_non_crash_failures(true)?;
+
+    // Start it now so the install is self-sufficient (the NSIS installer also
+    // issues `sc start`, which is then a harmless no-op).
+    let no_args: [&OsStr; 0] = [];
+    match service.start(&no_args) {
+        Ok(()) => println!("Service '{SERVICE_DISPLAY_NAME}' started."),
+        Err(windows_service::Error::Winapi(e))
+            if e.raw_os_error() == Some(ERROR_SERVICE_ALREADY_RUNNING) =>
+        {
+            println!("Service '{SERVICE_DISPLAY_NAME}' is already running.");
+        }
+        Err(e) => {
+            println!(
+                "Service '{SERVICE_DISPLAY_NAME}' is installed and set to start automatically at boot, \
+                 but could not be started right now ({e}). Run: sc start {SERVICE_NAME}"
+            );
+        }
+    }
+
     Ok(())
 }
 
