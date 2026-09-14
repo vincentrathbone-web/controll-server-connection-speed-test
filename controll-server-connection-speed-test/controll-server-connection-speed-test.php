@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Controll Server Connection Speed Test
  * Description: Measures connection quality between your browser and this WordPress server (latency, jitter, download, upload).
- * Version: 1.8.0
+ * Version: 1.9.0
  * Author: Controll
  * License: GPL-2.0-or-later
  * Text Domain: controll-server-connection-speed-test
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 // Kept in sync with the "Version:" header above by package.ps1 on every release
 // bump, and surfaced in the admin screen and the remote monitoring API so a
 // central dashboard (or the desktop app) can tell which sites are outdated.
-define('CSST_PLUGIN_VERSION', '1.8.0');
+define('CSST_PLUGIN_VERSION', '1.9.0');
 
 final class CSST_Plugin {
     private const SLUG = 'controll-server-connection-speed-test';
@@ -294,6 +294,39 @@ final class CSST_Plugin {
         );
     }
 
+    /**
+     * A random per-site token gating raw-ping.php, since that file
+     * deliberately can't load WordPress (and so can't check a WordPress
+     * nonce) without defeating the very measurement it exists to take. Kept
+     * as a plain file next to it rather than a wp_option, so raw-ping.php
+     * can check it without touching the database either. Returns null (and
+     * leaves the raw-ping feature unavailable — callers fall back to "n/a"
+     * gracefully) if this host doesn't allow writing to the plugin's own
+     * directory after install.
+     */
+    private static function get_raw_ping_token(): ?string {
+        $path = plugin_dir_path(__FILE__) . 'raw-ping.key';
+
+        if (is_readable($path)) {
+            $existing = trim((string) @file_get_contents($path));
+            if ($existing !== '') {
+                return $existing;
+            }
+        }
+
+        try {
+            $token = bin2hex(random_bytes(16));
+        } catch (Exception $e) {
+            return null;
+        }
+
+        if (@file_put_contents($path, $token) === false) {
+            return null;
+        }
+
+        return $token;
+    }
+
     public static function enqueue_assets(string $hook_suffix): void {
         if ($hook_suffix !== 'toplevel_page_' . self::SLUG) {
             return;
@@ -322,9 +355,17 @@ final class CSST_Plugin {
             true
         );
 
+        $raw_ping_token = self::get_raw_ping_token();
+
         wp_localize_script('csst-admin-script', 'CSSTConfig', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce(self::NONCE_ACTION),
+            // Null when this host won't let the plugin write its own token
+            // file — the frontend treats that as "Network Latency
+            // unavailable" rather than failing the whole speed test.
+            'rawPingUrl' => $raw_ping_token
+                ? add_query_arg('k', $raw_ping_token, plugins_url('raw-ping.php', __FILE__))
+                : null,
             'defaults' => [
                 'pingCount' => 8,
                 'downloadDurationSec' => 8,
@@ -501,9 +542,16 @@ final class CSST_Plugin {
                 <div id="csst-status" class="csst-status" aria-live="polite">
                     <?php echo esc_html__('Idle.', 'controll-server-connection-speed-test'); ?>
                 </div>
+                <p class="description">
+                    <?php echo esc_html__('Network Latency is how fast this server replies before WordPress or any plugins have run. Latency with Plugins is how fast a real page request finishes once WordPress and every active plugin has run — the gap between the two shows how much time your plugins are adding.', 'controll-server-connection-speed-test'); ?>
+                </p>
                 <div class="csst-results">
                     <div class="csst-card csst-result-card">
-                        <h4><?php echo esc_html__('Latency', 'controll-server-connection-speed-test'); ?></h4>
+                        <h4><?php echo esc_html__('Network Latency', 'controll-server-connection-speed-test'); ?></h4>
+                        <div id="csst-network-latency" class="csst-result-value">-</div>
+                    </div>
+                    <div class="csst-card csst-result-card">
+                        <h4><?php echo esc_html__('Latency with Plugins', 'controll-server-connection-speed-test'); ?></h4>
                         <div id="csst-latency" class="csst-result-value">-</div>
                     </div>
                     <div class="csst-card csst-result-card">
@@ -1560,6 +1608,13 @@ final class CSST_Plugin {
         $packet_loss_pct = isset($_POST['packetLossPct']) ? (float) $_POST['packetLossPct'] : 0.0;
         $latency_p50_ms = isset($_POST['latencyP50Ms']) ? (float) $_POST['latencyP50Ms'] : 0.0;
         $latency_p95_ms = isset($_POST['latencyP95Ms']) ? (float) $_POST['latencyP95Ms'] : 0.0;
+        // Not measured on every run (e.g. this host wouldn't let the plugin
+        // write its own raw-ping.key), so kept nullable rather than
+        // defaulting to 0 — a real 0ms and "not measured" mean very
+        // different things here.
+        $network_latency_ms = isset($_POST['networkLatencyMs']) && $_POST['networkLatencyMs'] !== ''
+            ? round((float) $_POST['networkLatencyMs'], 1)
+            : null;
         $quality_grade = isset($_POST['qualityGrade']) ? sanitize_text_field(wp_unslash($_POST['qualityGrade'])) : '';
         $ping_samples = isset($_POST['pingSamples']) ? sanitize_text_field(wp_unslash($_POST['pingSamples'])) : '';
         $client_info = isset($_POST['clientInfo']) ? sanitize_text_field(wp_unslash($_POST['clientInfo'])) : '';
@@ -1572,6 +1627,7 @@ final class CSST_Plugin {
             'packetLossPct' => round($packet_loss_pct, 1),
             'latencyP50Ms' => round($latency_p50_ms, 1),
             'latencyP95Ms' => round($latency_p95_ms, 1),
+            'networkLatencyMs' => $network_latency_ms,
             'downloadMbps' => round($download_mbps, 2),
             'uploadMbps' => round($upload_mbps, 2),
             'qualityGrade' => $quality_grade,

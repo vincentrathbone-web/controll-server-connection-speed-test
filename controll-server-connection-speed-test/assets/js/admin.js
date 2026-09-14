@@ -8,6 +8,7 @@
   const stopButton = document.getElementById("csst-stop");
   const statusEl = document.getElementById("csst-status");
 
+  const networkLatencyEl = document.getElementById("csst-network-latency");
   const latencyEl = document.getElementById("csst-latency");
   const jitterEl = document.getElementById("csst-jitter");
   const downloadEl = document.getElementById("csst-download");
@@ -231,6 +232,7 @@
   }
 
   function resetResults() {
+    networkLatencyEl.textContent = "-";
     latencyEl.textContent = "-";
     jitterEl.textContent = "-";
     downloadEl.textContent = "-";
@@ -311,6 +313,7 @@
           <tr ${expanded ? "" : "hidden"}>
             <td colspan="6">
               <div class="csst-detail-grid">
+                <div><b>${typeof row.networkLatencyMs === "number" ? `${row.networkLatencyMs.toFixed(1)} ms` : "n/a"}</b>Network latency</div>
                 <div><b>${Number(row.jitterMs || 0).toFixed(1)} ms</b>Jitter</div>
                 <div><b>${Number(row.packetLossPct || 0).toFixed(1)}%</b>Packet loss</div>
                 <div><b>${Number(row.latencyP50Ms || 0).toFixed(1)} ms</b>P50</div>
@@ -698,6 +701,7 @@
       packetLossPct: String(record.packetLossPct),
       latencyP50Ms: String(record.latencyP50Ms),
       latencyP95Ms: String(record.latencyP95Ms),
+      networkLatencyMs: record.networkLatencyMs === "" || record.networkLatencyMs === undefined ? "" : String(record.networkLatencyMs),
       downloadMbps: String(record.downloadMbps),
       uploadMbps: String(record.uploadMbps),
       qualityGrade: record.qualityGrade,
@@ -748,6 +752,7 @@
 
     const header = [
       "DateTime",
+      "NetworkLatencyMs",
       "LatencyMs",
       "JitterMs",
       "PacketLossPct",
@@ -764,6 +769,7 @@
       lines.push(
         [
           csvEscape(row.timestamp || ""),
+          csvEscape(typeof row.networkLatencyMs === "number" ? row.networkLatencyMs : ""),
           csvEscape(row.latencyMs || ""),
           csvEscape(row.jitterMs || ""),
           csvEscape(row.packetLossPct || ""),
@@ -1037,6 +1043,26 @@
     return performance.now() - start;
   }
 
+  // Hits raw-ping.php directly — a standalone file that never loads
+  // WordPress, so this times the web server and network path alone. Diffed
+  // against pingOnce() (which pays the full WordPress-plus-plugins cost),
+  // the gap between the two is how much of "Latency with Plugins" is
+  // actually WordPress and its active plugins, not the network.
+  async function pingOnceRaw() {
+    const start = performance.now();
+    const response = await fetch(config.rawPingUrl, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    await response.json();
+
+    return performance.now() - start;
+  }
+
   function calculateJitter(samples) {
     if (samples.length <= 1) {
       return 0;
@@ -1049,7 +1075,7 @@
     return Math.sqrt(variance);
   }
 
-  async function runLatencyTest(pingCount) {
+  async function runLatencyTest(pingCount, pingFn, statusLabel) {
     const samples = [];
     let lost = 0;
 
@@ -1059,13 +1085,13 @@
       }
 
       try {
-        const result = await pingOnce();
+        const result = await pingFn();
         samples.push(result);
       } catch (error) {
         lost += 1;
       }
 
-      setStatus(`Latency test ${i + 1}/${pingCount}`);
+      setStatus(`${statusLabel} ${i + 1}/${pingCount}`);
     }
 
     if (samples.length === 0) {
@@ -1256,8 +1282,29 @@
     resetResults();
 
     try {
+      let networkLatencyMs = null;
+      if (config.rawPingUrl) {
+        setStatus("Running network latency test...");
+        try {
+          const networkLatencyResult = await runLatencyTest(defaults.pingCount || 8, pingOnceRaw, "Network latency test");
+          networkLatencyMs = Number(networkLatencyResult.average.toFixed(1));
+          networkLatencyEl.textContent = formatMs(networkLatencyResult.average);
+        } catch (error) {
+          // Doesn't fail the whole speed test — this is a supplementary
+          // reading, and some hosts won't allow the raw-ping.key file this
+          // needs to be written at all.
+          networkLatencyEl.textContent = "n/a";
+        }
+      } else {
+        networkLatencyEl.textContent = "n/a";
+      }
+
+      if (stopped) {
+        throw new Error("Stopped");
+      }
+
       setStatus("Running latency test...");
-      const latencyResult = await runLatencyTest(defaults.pingCount || 8);
+      const latencyResult = await runLatencyTest(defaults.pingCount || 8, pingOnce, "Latency test");
       latencyEl.textContent = formatMs(latencyResult.average);
       jitterEl.textContent = formatMs(latencyResult.jitter);
 
@@ -1309,6 +1356,7 @@
         packetLossPct,
         latencyP50Ms,
         latencyP95Ms,
+        networkLatencyMs: networkLatencyMs === null ? "" : networkLatencyMs,
         downloadMbps,
         uploadMbps,
         qualityGrade: ratings.overallLabel,
@@ -1317,7 +1365,8 @@
       });
 
       const summary = [
-        `Latency: ${latencyEl.textContent}`,
+        `Network Latency: ${networkLatencyEl.textContent}`,
+        `Latency with Plugins: ${latencyEl.textContent}`,
         `Jitter: ${jitterEl.textContent}`,
         `Packet Loss: ${packetLossPct.toFixed(1)}%`,
         `P50: ${latencyP50Ms.toFixed(1)} ms`,

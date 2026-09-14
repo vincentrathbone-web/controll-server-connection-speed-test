@@ -63,27 +63,35 @@ Diagnostics Snapshot, watched Live Resource Usage poll, and read the rendered pa
 console for errors. Caught and fixed one real bug this way: diagnostics that couldn't be measured
 on that host (no `sys_getloadavg()` support) were showing as "Good" instead of "Unknown" — a green
 checkmark next to "could not be measured" is exactly the kind of misleading signal this whole
-effort is meant to prevent. Not yet tested against `nohsapp.co.za` itself or a live cPanel/LVE
-host — the object-cache/OPcache/cron logic is straightforward enough to trust from code review,
-but the "Shared Server" card and swap detection specifically want a real Linux host with
-`sys_getloadavg()` and `/proc` available to see actual non-null numbers.
+effort is meant to prevent.
+
+**Verified live against `nohsapp.co.za` itself (2026-09-14, same day):** deployed and confirmed
+"Shared Server" showed a real, non-null percentage next to "Your Website"; "Server Memory" showed
+**99.9% of backup memory used** — matching the ~100% swap-used figure found by hand over SSH a
+week earlier almost exactly, confirming the shared host's memory shortage is an ongoing condition,
+not a one-off. "Repeated Lookups" correctly flagged no object cache; "Code Readiness" correctly
+confirmed OPcache genuinely enabled on that host; "Scheduled Tasks" found 1 real overdue task and
+generated a working cPanel Cron Jobs command using the site's actual domain.
+
+## Done — shipped in v1.9.0 (2026-09-14)
+
+- [x] **Bootstrap-independent "raw ping" endpoint.** Added `raw-ping.php` — a standalone file that
+  never loads WordPress at all — and split the Speed Test History "Latency" card into two: "Network
+  Latency" (this new endpoint) and "Latency with Plugins" (the original `admin-ajax.php`-based
+  measurement, unchanged, still what the connection-quality grade is based on). Both are recorded
+  with every run, shown in the result summary and each history row's detail, and included in CSV
+  export.
+  - Since `raw-ping.php` can't check a WordPress nonce without defeating its own purpose (loading
+    WordPress to check it would erase the very thing being timed), it's gated by a small random
+    per-site token file (`raw-ping.key`, generated on first use, git-ignored) instead — closes the
+    "silently guessable URL once this ships to every WordPress.org install" concern without paying
+    WordPress's bootstrap cost to verify it. Falls back to "n/a" gracefully if a host won't allow
+    the plugin to write that file after install.
+  - **Verified locally**: on a dev install with 39 active plugins, Network Latency read ~15ms
+    against a Latency-with-Plugins reading of ~1,095ms — the gap the whole feature exists to show.
+    Not yet verified against `nohsapp.co.za` or another live cPanel host.
 
 ## Not started — remaining, in priority order
-
-- [ ] **Bootstrap-independent "raw ping" endpoint.** `ajax_ping()` runs through `admin-ajax.php`,
-  which means every "Latency" sample pays the full WordPress bootstrap (all active plugins) before
-  the one-line handler executes. Add a second, lightweight ping that bypasses that (a tiny
-  standalone script, or an mu-plugin hooked as early as possible) so Latency can be split into
-  "raw web server" vs. "WordPress + plugins" — this alone would have shown directly which layer
-  was slow instead of one blended number.
-  - **Show the user:** "Website starts responding in: 0.7s" and, separately, "Your pages finish
-    loading in: 0.1s after that."
-  - **Suggested action:** Slow first number, fast second → **ask your host** ("My site is slow to
-    start responding to any request, even a very simple one — can you check if the server is
-    overloaded?"). Slow second number → **you can do this yourself** (deactivate unused plugins
-    one at a time).
-  - Largest remaining item: touches the speed-test measurement itself, needs a second latency
-    series in the history UI, and a new unauthenticated endpoint to review for abuse potential.
 
 - [ ] **A time-boxed "who's using your site right now" report**, run on demand only (a "Start
   Capture" button on the Process Monitor tab, ~60 seconds, then goes fully inactive — no standing

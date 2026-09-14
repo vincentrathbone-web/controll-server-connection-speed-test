@@ -16,6 +16,10 @@ controll-server-monitor-rs/app/src-tauri/gen/schemas/
 controll-server-monitor/data/*.sqlite
 controll-server-monitor-rs/*.sqlite
 
+# Generated at runtime by CSST_Plugin::get_raw_ping_token() — a per-site
+# secret gating raw-ping.php, never something to check in.
+controll-server-connection-speed-test/raw-ping.key
+
 # Packaged/versioned release zips (rebuilt via package.ps1 / build.ps1)
 *.zip
 
