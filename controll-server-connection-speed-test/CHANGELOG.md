@@ -1,3 +1,11 @@
+## [1.8.0] - 2026-09-14
+
+- Added a "Shared Server" card to Live Resource Usage, next to "Your Website" — the account's own CPU/memory allowance usage can look perfectly healthy while the physical server (every other tenant included) is under heavy load, and there was previously no way to see that without shell access. A plain-language note beneath both cards now says outright when the slowdown is coming from server-wide business rather than the site itself, and that this isn't fixable from the site owner's side.
+- Added four new Server Diagnostics Snapshot checks, each in plain language with a concrete next step rather than a raw number: whether the site is using an external object cache (Redis/Memcached) instead of hitting the database for repeated lookups; whether OPcache is enabled (checked from inside a real page request — WP-CLI runs under a different PHP mode and can't see this); whether background scheduled tasks (WP-Cron) are running on time or piling up, including a ready-to-paste cPanel Cron Jobs command when they're not; and the shared server's available memory, surfaced only when it's actually critically low.
+- Diagnostics that genuinely couldn't be measured on a host (e.g. no `sys_getloadavg()` support) now show "Unknown" instead of being silently scored as "Good" — a green checkmark next to "could not be measured" was a real, misleading bug, caught during testing on a host without that support.
+- Rewrote several existing diagnostic summaries in plain language, and the Process Monitor tab now explains its own real limitation: it can only ever show this account's own processes, never another tenant's, so a calm-looking list doesn't rule out a busy shared server.
+- All of the above was designed for a non-technical site owner to read and act on: every finding is framed as something they can fix themselves, something to ask their host about, or purely informational — see `TODO-diagnostics.md` for the full design rationale.
+
 ## [1.7.9] - 2026-08-27
 
 - Added `readme.txt` in WordPress.org's standard format (required for directory submission — `README.md` isn't read by WordPress.org at all).

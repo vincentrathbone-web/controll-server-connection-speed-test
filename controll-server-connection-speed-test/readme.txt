@@ -4,7 +4,7 @@ Tags: monitoring, uptime, diagnostics, speed test, server
 Requires at least: 5.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.7.9
+Stable tag: 1.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -72,6 +72,11 @@ The Remote Monitoring API key is compared using a timing-safe comparison (`hash_
 1. The Server Speed Test admin page, showing the overall server rating banner and diagnostics snapshot.
 
 == Changelog ==
+
+= 1.8.0 =
+* Added a "Shared Server" reading next to "Your Website" in Live Resource Usage, with a plain-language note explaining when a slowdown is coming from the busy shared server rather than the site itself — and that it isn't fixable from the site owner's side when that's the case.
+* Added four new diagnostics: whether an external object cache (Redis/Memcached) is active, whether OPcache is enabled, whether background scheduled tasks (WP-Cron) are running on time (with a ready-to-paste cPanel Cron Jobs command when they're not), and the shared server's available memory when it's critically low. Every finding is written in plain language with a concrete next step.
+* Fixed diagnostics that couldn't be measured on a host showing as "Good" instead of "Unknown".
 
 = 1.7.9 =
 * Hardening pass ahead of the WordPress.org directory submission: switched `parse_url()` to `wp_parse_url()`, added `wp_unslash()` before sanitizing several request fields, and documented the plugin's two deliberately-unescaped raw-file-download outputs (the speed-test payload and the generated keep-alive script) for the automated Plugin Check tool. No user-facing behavior changes.

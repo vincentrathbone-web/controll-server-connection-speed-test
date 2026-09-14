@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Controll Server Connection Speed Test
  * Description: Measures connection quality between your browser and this WordPress server (latency, jitter, download, upload).
- * Version: 1.7.9
+ * Version: 1.8.0
  * Author: Controll
  * License: GPL-2.0-or-later
  * Text Domain: controll-server-connection-speed-test
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 // Kept in sync with the "Version:" header above by package.ps1 on every release
 // bump, and surfaced in the admin screen and the remote monitoring API so a
 // central dashboard (or the desktop app) can tell which sites are outdated.
-define('CSST_PLUGIN_VERSION', '1.7.9');
+define('CSST_PLUGIN_VERSION', '1.8.0');
 
 final class CSST_Plugin {
     private const SLUG = 'controll-server-connection-speed-test';
@@ -400,15 +400,24 @@ final class CSST_Plugin {
             <section class="csst-panel">
                 <h3><?php echo esc_html__('Live Resource Usage', 'controll-server-connection-speed-test'); ?></h3>
                 <p class="description">
-                    <?php echo esc_html__('Polls every 2 seconds only while this page is open and the browser tab is active; stops when you leave or switch away. On CloudLinux/LVE shared hosting, automatically uses this account\'s own CPU/memory limits instead of the whole server\'s. Otherwise, CPU falls back to system-wide load average, and Memory falls back to this WordPress installation\'s own PHP memory usage against its memory_limit (not the whole server\'s RAM) — shows n/a if unavailable.', 'controll-server-connection-speed-test'); ?>
+                    <?php echo esc_html__('Polls every 2 seconds only while this page is open and the browser tab is active; stops when you leave or switch away.', 'controll-server-connection-speed-test'); ?>
                 </p>
                 <div class="csst-live-grid">
                     <div class="csst-card csst-live-card">
                         <div class="csst-metric-head">
-                            <span class="csst-metric-title"><?php echo esc_html__('CPU Load', 'controll-server-connection-speed-test'); ?></span>
+                            <span class="csst-metric-title"><?php echo esc_html__('Your Website', 'controll-server-connection-speed-test'); ?></span>
                             <span id="csst-live-cpu-value" class="csst-live-value">-</span>
                         </div>
                         <canvas id="csst-live-cpu-chart" class="csst-sparkline" width="400" height="70"></canvas>
+                        <p class="csst-card-meta"><?php echo esc_html__('How much of your hosting plan\'s allowance your site is using right now.', 'controll-server-connection-speed-test'); ?></p>
+                    </div>
+                    <div class="csst-card csst-live-card">
+                        <div class="csst-metric-head">
+                            <span class="csst-metric-title"><?php echo esc_html__('Shared Server', 'controll-server-connection-speed-test'); ?></span>
+                            <span id="csst-live-server-value" class="csst-live-value">-</span>
+                        </div>
+                        <canvas id="csst-live-server-chart" class="csst-sparkline" width="400" height="70"></canvas>
+                        <p class="csst-card-meta"><?php echo esc_html__('How busy the whole server is, including every other website hosted on it — not just yours.', 'controll-server-connection-speed-test'); ?></p>
                     </div>
                     <div class="csst-card csst-live-card">
                         <div class="csst-metric-head">
@@ -417,6 +426,9 @@ final class CSST_Plugin {
                         </div>
                         <canvas id="csst-live-ram-chart" class="csst-sparkline" width="400" height="70"></canvas>
                     </div>
+                </div>
+                <div id="csst-live-cross-note" class="csst-status" style="margin-top:12px">
+                    <?php echo esc_html__('Waiting for the first reading…', 'controll-server-connection-speed-test'); ?>
                 </div>
             </section>
 
@@ -694,6 +706,9 @@ final class CSST_Plugin {
                     <p class="description">
                         <?php echo esc_html__('Shows top running processes sorted by CPU usage. Availability depends on hosting permissions.', 'controll-server-connection-speed-test'); ?>
                     </p>
+                    <p class="description">
+                        <?php echo esc_html__('This list only shows activity from your own website — shared hosting keeps every website’s processes separate for security. If this looks normal but your site still feels slow, the cause is likely elsewhere on the shared server, not here — see the "Shared Server" reading under Live Resource Usage.', 'controll-server-connection-speed-test'); ?>
+                    </p>
                     <div id="csst-processes-status" class="csst-status"><?php echo esc_html__('Process list not loaded yet.', 'controll-server-connection-speed-test'); ?></div>
                     <div class="csst-table-wrap">
                         <table class="csst-table">
@@ -831,6 +846,131 @@ final class CSST_Plugin {
         return null;
     }
 
+    /**
+     * A server that has run out of real memory and started relying on its
+     * slow backup memory ("swap") runs slower for every website hosted on
+     * it, not just this one — and this account's own memory usage can look
+     * completely fine while that's happening. Only meaningful when the host
+     * actually has swap configured at all.
+     *
+     * @return ?array{usedPercent: float}
+     */
+    private static function detect_swap_usage(): ?array {
+        if (!is_readable('/proc/meminfo')) {
+            return null;
+        }
+
+        $meminfo = @file_get_contents('/proc/meminfo');
+        if (!is_string($meminfo) || $meminfo === '') {
+            return null;
+        }
+
+        if (!preg_match('/^SwapTotal:\s*(\d+)\s*kB$/mi', $meminfo, $total_matches)
+            || !preg_match('/^SwapFree:\s*(\d+)\s*kB$/mi', $meminfo, $free_matches)) {
+            return null;
+        }
+
+        $total_kb = (int) $total_matches[1];
+        if ($total_kb <= 0) {
+            // No swap configured on this host at all — not a meaningful signal
+            // either way, so don't report it.
+            return null;
+        }
+
+        $free_kb = (int) $free_matches[1];
+        $used_percent = round((($total_kb - $free_kb) / $total_kb) * 100, 1);
+
+        return ['usedPercent' => $used_percent];
+    }
+
+    private static function detect_object_cache_active(): bool {
+        return function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache();
+    }
+
+    /**
+     * Has to be read from inside a real front-end/admin request: WP-CLI runs
+     * PHP under a different mode (CLI) than actual visits, which keeps its
+     * own separate opcode cache (or none at all) — confirmed by testing,
+     * `wp eval` reports no opcache present even when the live site's PHP
+     * worker has one enabled and warmed up.
+     *
+     * @return array{available: bool, enabled?: bool, hitRatePercent?: ?float}
+     */
+    private static function detect_opcache_status(): array {
+        if (!function_exists('opcache_get_status')) {
+            return ['available' => false];
+        }
+
+        $status = @opcache_get_status(false);
+        if (!is_array($status)) {
+            return ['available' => false];
+        }
+
+        $enabled = !empty($status['opcache_enabled']);
+        $hit_rate = null;
+        if ($enabled && isset($status['opcache_statistics']['opcache_hit_rate'])) {
+            $hit_rate = round((float) $status['opcache_statistics']['opcache_hit_rate'], 1);
+        }
+
+        return [
+            'available' => true,
+            'enabled' => $enabled,
+            'hitRatePercent' => $hit_rate,
+        ];
+    }
+
+    /**
+     * WP-Cron only ever runs when a request happens to arrive after a
+     * scheduled task's due time (unless a real, timed schedule has been set
+     * up to replace that) — so the number that actually indicates trouble is
+     * how many tasks are sitting *overdue*, not the total scheduled count
+     * (a healthy site normally has dozens of hooks scheduled for the future).
+     *
+     * @return array{usesRealSchedule: bool, totalScheduled: int, overdue: int}
+     */
+    private static function get_wp_cron_health(): array {
+        $uses_real_schedule = defined('DISABLE_WP_CRON') && DISABLE_WP_CRON;
+        $total_scheduled = 0;
+        $overdue = 0;
+        $now = time();
+
+        if (function_exists('_get_cron_array')) {
+            $cron = _get_cron_array();
+            if (is_array($cron)) {
+                foreach ($cron as $timestamp => $hooks) {
+                    if (!is_array($hooks)) {
+                        continue;
+                    }
+                    foreach ($hooks as $hook_events) {
+                        $count = is_array($hook_events) ? count($hook_events) : 0;
+                        $total_scheduled += $count;
+                        if ((int) $timestamp < $now) {
+                            $overdue += $count;
+                        }
+                    }
+                }
+            }
+        }
+
+        return [
+            'usesRealSchedule' => $uses_real_schedule,
+            'totalScheduled' => $total_scheduled,
+            'overdue' => $overdue,
+        ];
+    }
+
+    /**
+     * A ready-to-paste command for cPanel's own point-and-click "Cron Jobs"
+     * page, so fixing a pseudo-cron backlog doesn't require editing any
+     * files — matches the existing Keep-Alive script generator's philosophy
+     * of handing over a finished artifact rather than instructions to follow.
+     */
+    private static function build_cron_setup_command(): string {
+        $cron_url = home_url('wp-cron.php?doing_wp_cron');
+
+        return sprintf('wget -q -O /dev/null %s >/dev/null 2>&1', escapeshellarg($cron_url));
+    }
+
     private static function compute_live_stats(): array {
         $lve = self::get_cpanel_lve_usage_cached();
         $lve_available = !isset($lve['error']);
@@ -889,6 +1029,13 @@ final class CSST_Plugin {
             // CloudLinux's percent-of-one-core CPU quota units (100 = 1 core).
             'cpuUsedRaw' => $cpu_used_raw,
             'cpuMaxRaw' => $cpu_max_raw,
+            // Always the whole shared server's business, independent of
+            // cpuPercent/cpuSource above — on CloudLinux/LVE hosting cpuPercent
+            // is this *account's own* allowance usage, which can look perfectly
+            // healthy while the physical server (every other tenant included)
+            // is under heavy load. Shown side by side in the UI so that gap is
+            // visible without needing shell access to the box.
+            'serverBusyPercent' => $system_cpu_percent,
             'memoryPercent' => $memory_percent,
             'memorySource' => $memory_source,
             'totalRamBytes' => $total_ram_out,
@@ -1523,7 +1670,46 @@ final class CSST_Plugin {
             $disk_rating['summary'] .= ' cPanel quota lookup failed (' . $disk_usage['sourceError'] . '); showing total server disk instead.';
         }
 
-        $overall_score = max($db_score, $php_score, $load_score, $memory_score, $disk_score);
+        // This account's own allowance usage, so the "load" card below can
+        // tell "your site is busy" apart from "the shared server is busy" —
+        // the two look identical from load average alone, but only one of
+        // them is something the site owner can act on.
+        $lve_for_load = self::get_cpanel_lve_usage_cached();
+        $account_cpu_percent = (!isset($lve_for_load['error']) && isset($lve_for_load['cpuPercent']))
+            ? (float) $lve_for_load['cpuPercent']
+            : null;
+
+        $swap_usage = self::detect_swap_usage();
+        $swap_score = ($swap_usage !== null && $swap_usage['usedPercent'] >= 85) ? 3 : 1;
+
+        $object_cache_active = self::detect_object_cache_active();
+        $object_cache_score = $object_cache_active ? 1 : 2;
+
+        $opcache_status = self::detect_opcache_status();
+        $opcache_score = 1;
+        if ($opcache_status['available']) {
+            $opcache_score = $opcache_status['enabled'] ? 1 : 3;
+        }
+
+        $cron_health = self::get_wp_cron_health();
+        if ($cron_health['usesRealSchedule'] || $cron_health['overdue'] === 0) {
+            $cron_score = 1;
+        } elseif ($cron_health['overdue'] <= 5) {
+            $cron_score = 2;
+        } else {
+            $cron_score = 3;
+        }
+
+        $overall_score = max(
+            $db_score,
+            $php_score,
+            $load_score,
+            $memory_score,
+            $disk_score,
+            $object_cache_score,
+            $opcache_score,
+            $cron_score
+        );
 
         $active_plugin_count = count((array) get_option('active_plugins', []));
         if (is_multisite()) {
@@ -1572,6 +1758,12 @@ final class CSST_Plugin {
             'queryCount' => $query_count,
             'queryTotalMs' => $query_total_ms,
             'peakMemoryBytes' => $peak_memory_bytes,
+            'accountCpuPercent' => $account_cpu_percent,
+            'swapUsedPercent' => $swap_usage['usedPercent'] ?? null,
+            'objectCacheActive' => $object_cache_active,
+            'opcache' => $opcache_status,
+            'cron' => $cron_health,
+            'cronSetupCommand' => self::build_cron_setup_command(),
             'interpretation' => [
                 'overall' => [
                     'rating' => self::score_to_label($overall_score),
@@ -1590,18 +1782,30 @@ final class CSST_Plugin {
                     'summary' => $php_score <= 1 ? 'PHP execution speed is good.' : ($php_score === 2 ? 'PHP execution speed is fair.' : 'PHP execution speed is slow.'),
                 ],
                 'load' => [
-                    'rating' => self::score_to_label($load_score),
+                    'rating' => is_null($load_ratio) ? 'unknown' : self::score_to_label($load_score),
                     'ratio1MinToCpu' => is_null($load_ratio) ? null : round($load_ratio, 2),
-                    'summary' => is_null($load_ratio)
-                        ? 'Load ratio not available on this host.'
-                        : ($load_ratio <= 0.7
-                            ? 'Current CPU load is comfortable.'
-                            : ($load_ratio <= 1.0
-                                ? 'CPU load is moderate.'
-                                : 'CPU load is high and may impact response times.')),
+                    'summary' => self::build_load_summary($load_score, $load_ratio, $account_cpu_percent),
+                ],
+                'objectCache' => [
+                    'rating' => self::score_to_label($object_cache_score),
+                    'summary' => $object_cache_active
+                        ? 'Your site remembers repeated information for a while instead of looking it up fresh every time — good for handling busy periods.'
+                        : 'Your site looks up the same information from scratch on every visit, instead of remembering it for a while. This can slow things down on a busy site — ask your host if they offer Redis or Memcached and how to turn it on.',
+                ],
+                'opcache' => [
+                    'rating' => !$opcache_status['available'] ? 'unknown' : self::score_to_label($opcache_score),
+                    'summary' => !$opcache_status['available']
+                        ? 'Could not check whether your server keeps your site\'s code ready to go between visits.'
+                        : ($opcache_status['enabled']
+                            ? 'Your server keeps your site\'s code ready to go between visits, which helps every page load faster.'
+                            : 'Your server is rebuilding your site\'s code from scratch on every visit instead of keeping a ready-to-go copy warmed up. This is usually a quick fix — look for "OPcache" or "PHP OPcache" in your hosting control panel\'s PHP settings and turn it on.'),
+                ],
+                'cron' => [
+                    'rating' => self::score_to_label($cron_score),
+                    'summary' => self::build_cron_summary($cron_score, $cron_health),
                 ],
                 'memory' => [
-                    'rating' => self::score_to_label($memory_score),
+                    'rating' => is_null($memory_limit_ratio) ? 'unknown' : self::score_to_label($memory_score),
                     'memoryLimitToSystemRatio' => is_null($memory_limit_ratio) ? null : round($memory_limit_ratio, 3),
                     'summary' => is_null($memory_limit_ratio)
                         ? 'Memory limit ratio could not be determined.'
@@ -1619,7 +1823,54 @@ final class CSST_Plugin {
             ],
         ];
 
+        // Only reported when it's actually significant — a healthy amount of
+        // free memory doesn't need a card telling the site owner so.
+        if ($swap_usage !== null && $swap_usage['usedPercent'] >= 85) {
+            $data['interpretation']['swap'] = [
+                'rating' => self::score_to_label($swap_score),
+                'summary' => 'The shared server is almost out of memory and is running slower than normal for every website on it, including yours. This isn\'t something you can fix directly — ask your host to check the server\'s available memory.',
+            ];
+        }
+
         return $data;
+    }
+
+    private static function build_load_summary(int $load_score, ?float $load_ratio, ?float $account_cpu_percent): string {
+        if (is_null($load_ratio)) {
+            return 'Server business could not be measured on this host.';
+        }
+
+        if ($load_score <= 1) {
+            return 'The shared server is running normally right now.';
+        }
+
+        if ($account_cpu_percent !== null && $account_cpu_percent <= 60) {
+            return sprintf(
+                'Your website itself isn\'t using too many resources (using %s%% of your hosting plan\'s allowance) — the slowdown is coming from how busy the shared server is with other websites. This isn\'t something you can fix directly; contacting your host is the best next step.',
+                round($account_cpu_percent)
+            );
+        }
+
+        return 'The shared server is busy right now, which can slow down page loads. If this continues, contacting your host or upgrading your hosting plan may help.';
+    }
+
+    /**
+     * @param array{usesRealSchedule: bool, totalScheduled: int, overdue: int} $cron_health
+     */
+    private static function build_cron_summary(int $cron_score, array $cron_health): string {
+        if ($cron_health['usesRealSchedule']) {
+            return 'Your site uses a proper background schedule instead of waiting for a visitor, so scheduled tasks run on time.';
+        }
+
+        if ($cron_score <= 1) {
+            return 'Background tasks are running on time.';
+        }
+
+        return sprintf(
+            '%d background task%s running later than planned, because they only run when someone visits your site — busy times can make this worse. Setting up a real, timed schedule fixes this — see the ready-to-use command below.',
+            $cron_health['overdue'],
+            $cron_health['overdue'] === 1 ? ' is' : 's are'
+        );
     }
 
     public static function ajax_server_diagnostics(): void {

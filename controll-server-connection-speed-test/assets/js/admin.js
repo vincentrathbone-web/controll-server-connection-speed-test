@@ -40,6 +40,9 @@
   const liveRamValueEl = document.getElementById("csst-live-ram-value");
   const liveCpuChartEl = document.getElementById("csst-live-cpu-chart");
   const liveRamChartEl = document.getElementById("csst-live-ram-chart");
+  const liveServerValueEl = document.getElementById("csst-live-server-value");
+  const liveServerChartEl = document.getElementById("csst-live-server-chart");
+  const liveCrossNoteEl = document.getElementById("csst-live-cross-note");
   const generateApiKeyButton = document.getElementById("csst-generate-api-key");
   const revokeApiKeyButton = document.getElementById("csst-revoke-api-key");
   const apiKeyInputEl = document.getElementById("csst-api-key");
@@ -76,6 +79,8 @@
     "hard-drive": "M3 10 H21 V20 H3 Z M3 13 H21 M7 17 L7.01 17 M11 17 L11.01 17",
     database: `M3 5 a9 3 0 0 0 18 0 a9 3 0 0 0 -18 0 M3 5 V19 A9 3 0 0 0 21 19 V5 M3 12 A9 3 0 0 0 21 12`,
     zap: "M13 2 L3 14 L12 14 L11 22 L21 10 L12 10 Z",
+    clock: `${circleD(12, 12, 10)} M12 6 V12 L16 14`,
+    layers: "M12 2 L2 8 L12 14 L22 8 Z M2 16 L12 22 L22 16 M2 12 L12 18 L22 12",
   };
 
   const TIERS = {
@@ -143,13 +148,31 @@
     const diskMonitorNote = formatDiskMonitorLine(diagnostics?.diskMonitor);
 
     const diskPercent = diagnostics?.disk?.usedPercent;
+    const cron = diagnostics?.cron || {};
+    const cronNeedsSetup = interpretation?.cron?.rating && interpretation.cron.rating !== "good";
+    const cronValue = cron.usesRealSchedule
+      ? "Real schedule in use"
+      : `${cron.overdue ?? 0} task${cron.overdue === 1 ? "" : "s"} running late`;
+
     const metrics = [
       { label: "Database", icon: "database", key: "database", value: `${diagnostics?.dbQueryMs ?? "n/a"} ms round-trip` },
       { label: "PHP Benchmark", icon: "zap", key: "phpBenchmark", value: `${diagnostics?.phpBenchmarkMs ?? "n/a"} ms` },
       { label: "Load", icon: "cpu", key: "load", value: `${diagnostics?.cpuLogicalCores ?? "n/a"} logical cores` },
       { label: "Memory", icon: "memory-stick", key: "memory", value: `${diagnostics?.memoryLimit ?? "n/a"} limit` },
       { label: "Disk", icon: "hard-drive", key: "disk", value: diskPercent !== null && diskPercent !== undefined ? `${diskPercent}% used` : "n/a", extraMeta: diskMonitorNote },
+      { label: "Repeated Lookups", icon: "layers", key: "objectCache", value: diagnostics?.objectCacheActive ? "Remembered" : "Looked up fresh each time" },
+      { label: "Code Readiness", icon: "zap", key: "opcache", value: diagnostics?.opcache?.available ? (diagnostics.opcache.enabled ? "Kept ready" : "Rebuilt each visit") : "n/a" },
+      { label: "Scheduled Tasks", icon: "clock", key: "cron", value: cronValue, extraMeta: cronNeedsSetup ? `Paste into cPanel → Cron Jobs (every 15 minutes): ${diagnostics?.cronSetupCommand ?? ""}` : "" },
     ];
+
+    if (interpretation?.swap) {
+      metrics.push({
+        label: "Server Memory",
+        icon: "memory-stick",
+        key: "swap",
+        value: typeof diagnostics?.swapUsedPercent === "number" ? `${diagnostics.swapUsedPercent}% of backup memory used` : "n/a",
+      });
+    }
 
     metricsGridEl.innerHTML = metrics
       .map((m) => {
@@ -332,6 +355,7 @@
   const LIVE_STATS_MAX_SAMPLES = 60;
   const liveCpuSamples = [];
   const liveRamSamples = [];
+  const liveServerSamples = [];
   let liveStatsTimerId = null;
   let liveStatsInFlight = false;
 
@@ -393,21 +417,62 @@
 
       const cpuPercent = data.data?.cpuPercent;
       const memoryPercent = data.data?.memoryPercent;
+      const serverBusyPercent = data.data?.serverBusyPercent;
 
       pushSample(liveCpuSamples, typeof cpuPercent === "number" ? cpuPercent : null);
       pushSample(liveRamSamples, typeof memoryPercent === "number" ? memoryPercent : null);
+      pushSample(liveServerSamples, typeof serverBusyPercent === "number" ? serverBusyPercent : null);
 
       liveCpuValueEl.textContent = typeof cpuPercent === "number" ? `${cpuPercent}%` : "n/a";
       liveRamValueEl.textContent = typeof memoryPercent === "number" ? `${memoryPercent}%` : "n/a";
+      if (liveServerValueEl) {
+        liveServerValueEl.textContent = typeof serverBusyPercent === "number" ? `${serverBusyPercent}%` : "n/a";
+      }
 
       drawSparkline(liveCpuChartEl, liveCpuSamples);
       drawSparkline(liveRamChartEl, liveRamSamples);
+      if (liveServerChartEl) {
+        drawSparkline(liveServerChartEl, liveServerSamples);
+      }
+
+      updateLiveCrossNote(cpuPercent, serverBusyPercent);
     } catch (error) {
       liveCpuValueEl.textContent = "error";
       liveRamValueEl.textContent = "error";
+      if (liveServerValueEl) {
+        liveServerValueEl.textContent = "error";
+      }
     } finally {
       liveStatsInFlight = false;
     }
+  }
+
+  // Plain-language read of the same two numbers shown in the cards above —
+  // written out as a sentence so "my site is fine but the shared server
+  // isn't" doesn't require the reader to compare two percentages themselves.
+  function updateLiveCrossNote(accountPercent, serverBusyPercent) {
+    if (!liveCrossNoteEl) {
+      return;
+    }
+
+    if (typeof serverBusyPercent !== "number") {
+      liveCrossNoteEl.textContent = "Shared server business could not be measured on this host.";
+      return;
+    }
+
+    if (serverBusyPercent < 75) {
+      liveCrossNoteEl.textContent = "The shared server is running normally right now.";
+      return;
+    }
+
+    if (typeof accountPercent === "number" && accountPercent <= 60) {
+      liveCrossNoteEl.textContent =
+        "Your website itself isn't using too many resources — the slowdown is coming from how busy the shared server is with other websites. This isn't something you can fix directly; contacting your host is the best next step.";
+      return;
+    }
+
+    liveCrossNoteEl.textContent =
+      "The shared server is busy right now, which can slow down page loads. If this continues, contacting your host or upgrading your hosting plan may help.";
   }
 
   function startLiveStats() {
