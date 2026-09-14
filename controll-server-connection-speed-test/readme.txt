@@ -4,7 +4,7 @@ Tags: monitoring, uptime, diagnostics, speed test, server
 Requires at least: 5.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.9.0
+Stable tag: 1.9.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -72,6 +72,9 @@ The Remote Monitoring API key is compared using a timing-safe comparison (`hash_
 1. The Server Speed Test admin page, showing the overall server rating banner and diagnostics snapshot.
 
 == Changelog ==
+
+= 1.9.1 =
+* Clarified the "Repeated Lookups" diagnostic's wording: it checks for a database-level object cache (Redis/Memcached), which is a different, deeper layer than a page-caching plugin — caught during live testing on a site that had a page-caching plugin active while this diagnostic (correctly) still reported no object cache, which read as a contradiction without the clarification.
 
 = 1.9.0 =
 * Split "Latency" into two readings: "Network Latency" (a standalone file that never loads WordPress, timing the web server and network path alone) and "Latency with Plugins" (the original measurement, through WordPress and every active plugin). The gap between them shows how much of a slow reading is actually WordPress and its plugins, not the network.

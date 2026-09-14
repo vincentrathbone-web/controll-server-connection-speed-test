@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Controll Server Connection Speed Test
  * Description: Measures connection quality between your browser and this WordPress server (latency, jitter, download, upload).
- * Version: 1.9.0
+ * Version: 1.9.1
  * Author: Controll
  * License: GPL-2.0-or-later
  * Text Domain: controll-server-connection-speed-test
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 // Kept in sync with the "Version:" header above by package.ps1 on every release
 // bump, and surfaced in the admin screen and the remote monitoring API so a
 // central dashboard (or the desktop app) can tell which sites are outdated.
-define('CSST_PLUGIN_VERSION', '1.9.0');
+define('CSST_PLUGIN_VERSION', '1.9.1');
 
 final class CSST_Plugin {
     private const SLUG = 'controll-server-connection-speed-test';
@@ -1846,7 +1846,7 @@ final class CSST_Plugin {
                     'rating' => self::score_to_label($object_cache_score),
                     'summary' => $object_cache_active
                         ? 'Your site remembers repeated information for a while instead of looking it up fresh every time — good for handling busy periods.'
-                        : 'Your site looks up the same information from scratch on every visit, instead of remembering it for a while. This can slow things down on a busy site — ask your host if they offer Redis or Memcached and how to turn it on.',
+                        : 'Your site looks up the same information from the database every time, instead of remembering it for a while. This is a different, deeper layer than a page-caching plugin you may already have (page caching only speeds up pages once they\'re fully built — it doesn\'t reduce this) — ask your host if they offer Redis or Memcached, which handles this layer.',
                 ],
                 'opcache' => [
                     'rating' => !$opcache_status['available'] ? 'unknown' : self::score_to_label($opcache_score),

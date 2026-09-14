@@ -1,3 +1,7 @@
+## [1.9.1] - 2026-09-14
+
+- Clarified the "Repeated Lookups" (object cache) diagnostic's summary text: it checks specifically for a database-level object cache (Redis/Memcached), a different and deeper layer than a page-caching plugin. Caught during live verification on `nohsapp.co.za`, which had a page-caching plugin ("Cache Sentinel") visibly active in the admin sidebar at the same moment this diagnostic (correctly) reported no object cache in use — technically consistent, but reads as a contradiction to a non-technical site owner without the two being distinguished.
+
 ## [1.9.0] - 2026-09-14
 
 - Split "Latency" into two separate readings, shown side by side as the first two cards in Speed Test History: "Network Latency" and "Latency with Plugins". The existing latency ping (`ajax_ping()`) runs through `admin-ajax.php`, which pays the full WordPress bootstrap — every active plugin loading — before its one-line handler ever executes, so it was really measuring "WordPress plus plugins," not the network. "Network Latency" is measured by a new standalone file (`raw-ping.php`) that deliberately never loads WordPress at all, so the gap between the two numbers is now visible directly, rather than blended into one figure — on a local test install with 39 active plugins this showed a ~14ms raw network/web-server reading against a ~1,095ms WordPress-bootstrapped one.
