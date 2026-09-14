@@ -91,21 +91,32 @@ generated a working cPanel Cron Jobs command using the site's actual domain.
     against a Latency-with-Plugins reading of ~1,095ms — the gap the whole feature exists to show.
     Not yet verified against `nohsapp.co.za` or another live cPanel host.
 
-## Not started — remaining, in priority order
+## Done — shipped in v1.10.0 (2026-09-14)
 
-- [ ] **A time-boxed "who's using your site right now" report**, run on demand only (a "Start
-  Capture" button on the Process Monitor tab, ~60 seconds, then goes fully inactive — no standing
-  logger, per earlier discussion). Confirmed by direct testing that a process's visitor and
-  triggering plugin can't be read from the server's operating system at all; has to be captured
-  from inside WordPress itself, for that one short window.
-  - **Show the user:** A table — "What was happening" / "How often" / "Roughly where from" — with
-    known activity translated into readable labels ("Your own Live Stats monitor," "A backup
-    running") and a generic "An unrecognized plugin action" fallback.
-  - **Suggested action:** Depends on what's found — mostly the user's own tools → nothing to fix;
-    a lot of one unrecognized action → deactivate that plugin to test; unfamiliar locations → flag
-    as a security question, not a performance one.
-  - Second-largest remaining item: new AJAX actions (start/stop/report), a capped ring buffer, and
-    an IP → city/country lookup for the "roughly where from" column.
+- [x] **A time-boxed "who's using your site right now" report.** A "Start Capture" button on the
+  Process Monitor tab runs for 60 seconds, then goes fully inactive — no standing logger. Hooks
+  `init` (`wp_doing_ajax()`), `rest_pre_dispatch`, and `template_redirect` record `{time, IP,
+  label}` to a capped, `.htaccess`-denied log file, but only while a WP transient marks a capture
+  window active — outside that window every hook is a no-op, so there's no standing per-request
+  cost. Known activity is translated into plain labels ("Your own Live Stats monitor," "A backup
+  running (Duplicator)," "WordPress's own background check-in (Heartbeat)"), with a generic
+  fallback for anything unrecognized. "Roughly where from" resolves a rough city/country
+  server-side (never from the admin's own browser) via a cached lookup, failing gracefully to
+  "Unknown location", and flags an IP matching the viewer's own connection as "(likely you)" — the
+  same self-check used manually during the original investigation. The log is deleted the moment
+  its report is read.
+  - **Verified locally** by running real captures against a dev install: confirmed events recorded
+    correctly across all three capture points (admin-ajax, REST, page view — including a real hit
+    to `/wp-json/wp/v2/types` correctly labeled "WordPress's own core REST API"), the report
+    correctly self-identified the admin's own traffic as "(likely you)", and the log file was
+    deleted after each report. Caught and fixed two real bugs in the process: the "Stop Capture"
+    button was left permanently disabled for the whole window (early stop was unreachable from the
+    UI — what looked like a working early-stop in initial testing was actually just natural
+    60-second expiry landing at a similar time), and the status-polling loop was missing the
+    in-flight guard `pollLiveStats()` already has, letting a slow report risk two overlapping
+    `setInterval` ticks. Not yet verified against `nohsapp.co.za` or another live cPanel host.
+
+## Not started — remaining, in priority order
 
 - [ ] **Show which times of day the site tends to slow down**, as a simple chart on the Speed Test
   History panel. Shared-host contention often has a daily rhythm.

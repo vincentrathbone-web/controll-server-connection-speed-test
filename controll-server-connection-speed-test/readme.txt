@@ -4,7 +4,7 @@ Tags: monitoring, uptime, diagnostics, speed test, server
 Requires at least: 5.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.9.1
+Stable tag: 1.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -72,6 +72,9 @@ The Remote Monitoring API key is compared using a timing-safe comparison (`hash_
 1. The Server Speed Test admin page, showing the overall server rating banner and diagnostics snapshot.
 
 == Changelog ==
+
+= 1.10.0 =
+* Added "Who's Using Your Site Right Now" to the Process Monitor tab — a one-minute, on-demand capture (never a standing logger) showing what was happening on your site during that minute: known plugin/monitoring activity translated into plain labels, how often each happened, and roughly where from (a rough location looked up for you, server-side, with the location resolution failing gracefully to "Unknown location"). Nothing is captured before pressing Start, and nothing is kept once the summary is shown.
 
 = 1.9.1 =
 * Clarified the "Repeated Lookups" diagnostic's wording: it checks for a database-level object cache (Redis/Memcached), which is a different, deeper layer than a page-caching plugin — caught during live testing on a site that had a page-caching plugin active while this diagnostic (correctly) still reported no object cache, which read as a contradiction without the clarification.

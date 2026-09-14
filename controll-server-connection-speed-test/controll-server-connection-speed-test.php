@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Controll Server Connection Speed Test
  * Description: Measures connection quality between your browser and this WordPress server (latency, jitter, download, upload).
- * Version: 1.9.1
+ * Version: 1.10.0
  * Author: Controll
  * License: GPL-2.0-or-later
  * Text Domain: controll-server-connection-speed-test
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 // Kept in sync with the "Version:" header above by package.ps1 on every release
 // bump, and surfaced in the admin screen and the remote monitoring API so a
 // central dashboard (or the desktop app) can tell which sites are outdated.
-define('CSST_PLUGIN_VERSION', '1.9.1');
+define('CSST_PLUGIN_VERSION', '1.10.0');
 
 final class CSST_Plugin {
     private const SLUG = 'controll-server-connection-speed-test';
@@ -35,6 +35,10 @@ final class CSST_Plugin {
     private const CPANEL_SHELL_QUOTA_CACHE_OPTION = 'csst_cpanel_shell_quota_cache';
     private const CPANEL_SHELL_QUOTA_CRON_HOOK = 'csst_cpanel_shell_quota_refresh';
     private const CPANEL_LVE_USAGE_TRANSIENT = 'csst_cpanel_lve_usage';
+    private const CAPTURE_TRANSIENT = 'csst_capture_until';
+    private const CAPTURE_DURATION_SECONDS = 60;
+    private const CAPTURE_MAX_LOG_LINES = 4000;
+    private const CAPTURE_GEO_TRANSIENT_PREFIX = 'csst_geo_';
 
     public static function init(): void {
         add_action('admin_menu', [self::class, 'register_menu']);
@@ -67,6 +71,22 @@ final class CSST_Plugin {
         add_action('wp_ajax_csst_clear_cpanel_settings', [self::class, 'ajax_clear_cpanel_settings']);
         add_action('wp_ajax_csst_test_cpanel_quota', [self::class, 'ajax_test_cpanel_quota']);
         add_action('wp_ajax_csst_refresh_cpanel_shell_quota', [self::class, 'ajax_refresh_cpanel_shell_quota']);
+        add_action('wp_ajax_csst_capture_start', [self::class, 'ajax_capture_start']);
+        add_action('wp_ajax_csst_capture_status', [self::class, 'ajax_capture_status']);
+        add_action('wp_ajax_csst_capture_stop', [self::class, 'ajax_capture_stop']);
+        add_action('wp_ajax_csst_capture_report', [self::class, 'ajax_capture_report']);
+
+        // These three only ever do anything while a capture window (started
+        // from the Process Monitor tab) is active — record_capture_event()
+        // checks that first and is a no-op otherwise, so there's no
+        // per-request cost added outside of someone deliberately running a
+        // capture. Covers the three ways a request reaches this site:
+        // admin-ajax (init, checking DOING_AJAX), the REST API
+        // (rest_pre_dispatch, only fires for a request that actually matched
+        // a route), and an ordinary page view (template_redirect).
+        add_action('init', [self::class, 'maybe_record_ajax_capture_event']);
+        add_filter('rest_pre_dispatch', [self::class, 'maybe_record_rest_capture_event'], 10, 3);
+        add_action('template_redirect', [self::class, 'maybe_record_page_view_capture_event']);
 
         add_action(self::DISK_MONITOR_CRON_HOOK, [self::class, 'run_disk_monitor_check']);
 
@@ -279,6 +299,12 @@ final class CSST_Plugin {
         $shellQuotaTimestamp = wp_next_scheduled(self::CPANEL_SHELL_QUOTA_CRON_HOOK);
         if ($shellQuotaTimestamp) {
             wp_unschedule_event($shellQuotaTimestamp, self::CPANEL_SHELL_QUOTA_CRON_HOOK);
+        }
+
+        delete_transient(self::CAPTURE_TRANSIENT);
+        $log_path = self::get_capture_log_path();
+        if (is_file($log_path)) {
+            @unlink($log_path);
         }
     }
 
@@ -775,6 +801,31 @@ final class CSST_Plugin {
                                     <td colspan="6"><?php echo esc_html__('No process data yet.', 'controll-server-connection-speed-test'); ?></td>
                                 </tr>
                             </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="csst-panel">
+                    <div class="csst-panel-header">
+                        <h3><?php echo esc_html__("Who's Using Your Site Right Now", 'controll-server-connection-speed-test'); ?></h3>
+                        <button id="csst-capture-start" class="button button-primary">
+                            <?php echo esc_html__('Start Capture', 'controll-server-connection-speed-test'); ?>
+                        </button>
+                    </div>
+                    <p class="description">
+                        <?php echo esc_html__("Runs for one minute, then shows what was happening on your site during that time — not a permanent record. Nothing is captured before you click Start, and nothing is kept afterwards beyond the summary below.", 'controll-server-connection-speed-test'); ?>
+                    </p>
+                    <div id="csst-capture-status" class="csst-status"><?php echo esc_html__('Not running.', 'controll-server-connection-speed-test'); ?></div>
+                    <div id="csst-capture-results" class="csst-table-wrap" hidden>
+                        <table class="csst-table">
+                            <thead>
+                                <tr>
+                                    <th><?php echo esc_html__('What was happening', 'controll-server-connection-speed-test'); ?></th>
+                                    <th><?php echo esc_html__('How often', 'controll-server-connection-speed-test'); ?></th>
+                                    <th><?php echo esc_html__('Roughly where from', 'controll-server-connection-speed-test'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody id="csst-capture-body"></tbody>
                         </table>
                     </div>
                 </section>
@@ -2131,6 +2182,358 @@ final class CSST_Plugin {
             'processes' => $processes,
             'generatedAt' => current_time('mysql'),
         ]);
+    }
+
+    // ---- Time-boxed "who's using your site right now" capture ----
+    //
+    // Confirmed by direct testing that a process's visitor and triggering
+    // plugin can't be read from the server's operating system at all —
+    // shared hosting jails the Process Monitor list to this account's own
+    // processes, and even those never carry the client IP or which plugin
+    // action they're running (that's inside PHP's own request memory, not
+    // visible to lsof/ps). The only way to answer "who's using my site
+    // right now" is to capture it from inside WordPress itself, for one
+    // short, deliberately time-boxed window — never as a standing logger.
+
+    private static function get_capture_log_dir(): string {
+        $upload_dir = wp_upload_dir();
+        $dir = trailingslashit($upload_dir['basedir']) . 'csst-capture';
+
+        if (!is_dir($dir)) {
+            wp_mkdir_p($dir);
+            // Belt-and-braces against direct web access to a file that
+            // briefly contains visitor IP addresses — matches the existing
+            // .htaccess-denial pattern already used elsewhere in this
+            // project for similar data directories.
+            @file_put_contents($dir . '/.htaccess', "Deny from all\n");
+            @file_put_contents($dir . '/index.php', "<?php\n// Silence is golden.\n");
+        }
+
+        return $dir;
+    }
+
+    private static function get_capture_log_path(): string {
+        return self::get_capture_log_dir() . '/events.log';
+    }
+
+    private static function get_capture_remaining_seconds(): int {
+        $until = get_transient(self::CAPTURE_TRANSIENT);
+        if ($until === false) {
+            return 0;
+        }
+
+        return max(0, (int) $until - time());
+    }
+
+    private static function is_capture_active(): bool {
+        return self::get_capture_remaining_seconds() > 0;
+    }
+
+    private static function get_capture_event_count(): int {
+        $path = self::get_capture_log_path();
+        if (!is_file($path)) {
+            return 0;
+        }
+
+        $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        return is_array($lines) ? count($lines) : 0;
+    }
+
+    /**
+     * Best-effort real visitor IP: prefers a CDN/proxy header when present
+     * (this is a diagnostic reading for the site owner, not a security
+     * control, so a spoofable header is an acceptable trade-off here — it
+     * just means an unusual reading might need a second look, not that
+     * anything is being authorized based on it), falling back to the
+     * connection's own address.
+     */
+    private static function get_capture_client_ip(): string {
+        $candidates = [
+            $_SERVER['HTTP_CF_CONNECTING_IP'] ?? null,
+            isset($_SERVER['HTTP_X_FORWARDED_FOR']) ? strtok((string) $_SERVER['HTTP_X_FORWARDED_FOR'], ',') : null,
+            $_SERVER['REMOTE_ADDR'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (!is_string($candidate)) {
+                continue;
+            }
+            $candidate = trim($candidate);
+            if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_IP)) {
+                return $candidate;
+            }
+        }
+
+        return '0.0.0.0';
+    }
+
+    private static function record_capture_event(string $label): void {
+        if (!self::is_capture_active()) {
+            return;
+        }
+
+        if (self::get_capture_event_count() >= self::CAPTURE_MAX_LOG_LINES) {
+            return;
+        }
+
+        $entry = wp_json_encode([
+            't' => microtime(true),
+            'ip' => self::get_capture_client_ip(),
+            'label' => $label,
+        ]);
+
+        if (!is_string($entry)) {
+            return;
+        }
+
+        @file_put_contents(self::get_capture_log_path(), $entry . "\n", FILE_APPEND | LOCK_EX);
+    }
+
+    private const KNOWN_AJAX_ACTION_LABELS = [
+        'csst_ping' => 'Your own Speed Test tool',
+        'csst_download' => 'Your own Speed Test tool',
+        'csst_upload' => 'Your own Speed Test tool',
+        'csst_history_add' => 'Your own Speed Test tool',
+        'csst_history_list' => 'Your own Speed Test tool',
+        'csst_diagnostics_history_list' => 'Your own Diagnostics tool',
+        'csst_server_diagnostics' => 'Your own Diagnostics tool',
+        'csst_process_list' => 'Your own Process Monitor',
+        'csst_live_stats' => 'Your own Live Stats monitor',
+        'csst_download_keep_alive_script' => 'Your own Keep-Alive script download',
+        'csst_generate_api_key' => 'Your own plugin settings',
+        'csst_revoke_api_key' => 'Your own plugin settings',
+        'csst_save_cpanel_settings' => 'Your own plugin settings',
+        'csst_clear_cpanel_settings' => 'Your own plugin settings',
+        'csst_test_cpanel_quota' => 'Your own plugin settings',
+        'csst_refresh_cpanel_shell_quota' => 'Your own plugin settings',
+        'csst_capture_start' => 'This activity report starting up',
+        'csst_capture_status' => 'This activity report checking in',
+        'csst_capture_stop' => 'This activity report stopping',
+        'csst_capture_report' => 'This activity report finishing',
+        'duplicator_process_worker' => 'A backup running (Duplicator)',
+        'duplicator_ajax_scan' => 'A backup running (Duplicator)',
+        'heartbeat' => 'WordPress\'s own background check-in (Heartbeat)',
+    ];
+
+    private static function label_for_ajax_action(string $action): string {
+        if (isset(self::KNOWN_AJAX_ACTION_LABELS[$action])) {
+            return self::KNOWN_AJAX_ACTION_LABELS[$action];
+        }
+
+        if ($action === '') {
+            return 'An unrecognized website request';
+        }
+
+        return sprintf('An unrecognized plugin action (%s)', $action);
+    }
+
+    private static function label_for_rest_route(string $route): string {
+        $known_prefixes = [
+            '/' . self::REST_NAMESPACE => 'Your own Remote Monitoring API',
+            '/wp/v2' => 'WordPress\'s own core REST API',
+        ];
+
+        foreach ($known_prefixes as $prefix => $label) {
+            if (strpos($route, $prefix) === 0) {
+                return $label;
+            }
+        }
+
+        $namespace = trim(explode('/', ltrim($route, '/'))[0] ?? '', '/');
+        // A route with no recognizable namespace segment (rare, but
+        // possible for a malformed request) falls back to the generic
+        // ajax-style message instead of an empty/confusing label.
+        return $namespace !== ''
+            ? sprintf('A website feature (%s)', $namespace)
+            : 'An unrecognized website request';
+    }
+
+    public static function maybe_record_ajax_capture_event(): void {
+        if (!self::is_capture_active() || !wp_doing_ajax()) {
+            return;
+        }
+
+        $action = isset($_REQUEST['action']) ? sanitize_key(wp_unslash($_REQUEST['action'])) : '';
+        self::record_capture_event(self::label_for_ajax_action($action));
+    }
+
+    /**
+     * @param mixed           $result
+     * @param WP_REST_Server  $server
+     * @param WP_REST_Request $request
+     * @return mixed unchanged — this is a filter, and only ever observes.
+     */
+    public static function maybe_record_rest_capture_event($result, $server, $request) {
+        if (self::is_capture_active()) {
+            $route = method_exists($request, 'get_route') ? (string) $request->get_route() : '';
+            self::record_capture_event(self::label_for_rest_route($route));
+        }
+
+        return $result;
+    }
+
+    public static function maybe_record_page_view_capture_event(): void {
+        if (!self::is_capture_active() || wp_doing_ajax() || (defined('REST_REQUEST') && REST_REQUEST)) {
+            return;
+        }
+
+        self::record_capture_event('Viewing a page on your site');
+    }
+
+    /**
+     * A rough city/country reading for a captured IP, via a public
+     * geolocation lookup made from the server itself (not the admin's
+     * browser) when the report is generated — no data beyond the IP address
+     * already in the site's own logs is sent, and only for distinct IPs
+     * actually seen during a capture the site owner deliberately started.
+     * Cached for an hour so re-running a capture soon after doesn't repeat
+     * lookups for the same visitors, and fails gracefully to "Unknown
+     * location" rather than blocking the report.
+     */
+    private static function geolocate_ip(string $ip): string {
+        if ($ip === '0.0.0.0' || filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+            return 'Unknown location';
+        }
+
+        $cache_key = self::CAPTURE_GEO_TRANSIENT_PREFIX . md5($ip);
+        $cached = get_transient($cache_key);
+        if (is_string($cached) && $cached !== '') {
+            return $cached;
+        }
+
+        $response = wp_remote_get('https://ipapi.co/' . rawurlencode($ip) . '/json/', [
+            'timeout' => 3,
+        ]);
+
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            return 'Unknown location';
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!is_array($body) || !empty($body['error'])) {
+            return 'Unknown location';
+        }
+
+        $city = isset($body['city']) ? sanitize_text_field($body['city']) : '';
+        $country = isset($body['country_name']) ? sanitize_text_field($body['country_name']) : '';
+        $label = trim(implode(', ', array_filter([$city, $country])));
+
+        if ($label === '') {
+            return 'Unknown location';
+        }
+
+        set_transient($cache_key, $label, HOUR_IN_SECONDS);
+
+        return $label;
+    }
+
+    /**
+     * @return array{rows: array<int, array{label: string, count: int, location: string}>, totalEvents: int}
+     */
+    private static function build_capture_report(): array {
+        $path = self::get_capture_log_path();
+        $lines = is_file($path) ? @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
+        $lines = is_array($lines) ? $lines : [];
+
+        $viewer_ip = self::get_capture_client_ip();
+
+        $grouped = [];
+        foreach ($lines as $line) {
+            $entry = json_decode($line, true);
+            if (!is_array($entry) || !isset($entry['label'], $entry['ip'])) {
+                continue;
+            }
+
+            $label = (string) $entry['label'];
+            $ip = (string) $entry['ip'];
+
+            if (!isset($grouped[$label])) {
+                $grouped[$label] = ['count' => 0, 'ips' => []];
+            }
+            $grouped[$label]['count']++;
+            $grouped[$label]['ips'][$ip] = ($grouped[$label]['ips'][$ip] ?? 0) + 1;
+        }
+
+        $rows = [];
+        foreach ($grouped as $label => $data) {
+            $distinct_ips = array_keys($data['ips']);
+            $location = 'Unknown location';
+
+            if (count($distinct_ips) === 1) {
+                $location = self::geolocate_ip($distinct_ips[0]);
+                if ($distinct_ips[0] === $viewer_ip) {
+                    $location .= ' (likely you)';
+                }
+            } elseif (count($distinct_ips) > 1) {
+                $location = sprintf('%d different visitors', count($distinct_ips));
+            }
+
+            $rows[] = [
+                'label' => $label,
+                'count' => (int) $data['count'],
+                'location' => $location,
+            ];
+        }
+
+        usort($rows, static fn($a, $b) => $b['count'] <=> $a['count']);
+
+        // The report is a one-time snapshot of a deliberately short window —
+        // nothing here is meant to persist as a standing record of visitor
+        // addresses once it's been read.
+        if (is_file($path)) {
+            @unlink($path);
+        }
+
+        return [
+            'rows' => $rows,
+            'totalEvents' => count($lines),
+        ];
+    }
+
+    public static function ajax_capture_start(): void {
+        self::verify_request();
+
+        if (!self::is_capture_active()) {
+            $path = self::get_capture_log_path();
+            if (is_file($path)) {
+                @unlink($path);
+            }
+            set_transient(self::CAPTURE_TRANSIENT, time() + self::CAPTURE_DURATION_SECONDS, self::CAPTURE_DURATION_SECONDS + 30);
+        }
+
+        wp_send_json_success([
+            'active' => true,
+            'remainingSeconds' => self::get_capture_remaining_seconds(),
+            'durationSeconds' => self::CAPTURE_DURATION_SECONDS,
+        ]);
+    }
+
+    public static function ajax_capture_status(): void {
+        self::verify_request();
+
+        wp_send_json_success([
+            'active' => self::is_capture_active(),
+            'remainingSeconds' => self::get_capture_remaining_seconds(),
+            'eventCount' => self::get_capture_event_count(),
+        ]);
+    }
+
+    public static function ajax_capture_stop(): void {
+        self::verify_request();
+
+        delete_transient(self::CAPTURE_TRANSIENT);
+
+        wp_send_json_success(['active' => false]);
+    }
+
+    public static function ajax_capture_report(): void {
+        self::verify_request();
+
+        // Reporting implicitly ends the window — there's no reason to keep
+        // capturing once the site owner has asked to see the results.
+        delete_transient(self::CAPTURE_TRANSIENT);
+
+        wp_send_json_success(self::build_capture_report());
     }
 
     public static function ajax_download_keep_alive_script(): void {

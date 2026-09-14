@@ -27,6 +27,10 @@
   const refreshProcessesButton = document.getElementById("csst-refresh-processes");
   const processesStatusEl = document.getElementById("csst-processes-status");
   const processesBodyEl = document.getElementById("csst-processes-body");
+  const captureStartButton = document.getElementById("csst-capture-start");
+  const captureStatusEl = document.getElementById("csst-capture-status");
+  const captureResultsEl = document.getElementById("csst-capture-results");
+  const captureBodyEl = document.getElementById("csst-capture-body");
   const downloadKeepAliveButton = document.getElementById("csst-download-keep-alive");
   const pluginLoadStatusEl = document.getElementById("csst-plugin-load-status");
   const pluginLoadBodyEl = document.getElementById("csst-plugin-load-body");
@@ -543,6 +547,148 @@
       renderProcesses([]);
     } finally {
       refreshProcessesButton.disabled = false;
+    }
+  }
+
+  let capturePollTimerId = null;
+
+  function renderCaptureReport(report) {
+    const rows = Array.isArray(report?.rows) ? report.rows : [];
+
+    if (rows.length === 0) {
+      captureResultsEl.hidden = true;
+      captureStatusEl.textContent = "Nothing happened on your site during that minute.";
+      return;
+    }
+
+    captureBodyEl.innerHTML = rows
+      .map(
+        (row) => `
+          <tr>
+            <td>${escapeHtml(row.label)}</td>
+            <td>${escapeHtml(row.count)}</td>
+            <td>${escapeHtml(row.location)}</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    captureResultsEl.hidden = false;
+    captureStatusEl.textContent = `Completed. ${report.totalEvents} request${report.totalEvents === 1 ? "" : "s"} seen in that minute.`;
+  }
+
+  async function fetchCaptureReport() {
+    captureStatusEl.textContent = "Finishing up...";
+    try {
+      const response = await postForm("csst_capture_report", {});
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Could not build the report");
+      }
+      renderCaptureReport(data.data);
+    } catch (error) {
+      captureStatusEl.textContent = `Error: ${error.message || "Unknown error"}`;
+    } finally {
+      captureStartButton.disabled = false;
+      captureStartButton.textContent = "Start Capture";
+    }
+  }
+
+  function stopCapturePolling() {
+    if (capturePollTimerId !== null) {
+      window.clearInterval(capturePollTimerId);
+      capturePollTimerId = null;
+    }
+  }
+
+  let capturePollInFlight = false;
+
+  async function pollCaptureStatus() {
+    // setInterval fires on a fixed clock regardless of whether the previous
+    // tick's request has resolved yet — without this guard, a slow report
+    // (e.g. the geolocation lookup taking a couple of seconds) could let a
+    // second tick see "not active" too and kick off a duplicate report call.
+    if (capturePollInFlight) {
+      return;
+    }
+    capturePollInFlight = true;
+
+    try {
+      const response = await postForm("csst_capture_status", {});
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Capture status failed");
+      }
+
+      const status = data.data || {};
+      if (!status.active) {
+        stopCapturePolling();
+        await fetchCaptureReport();
+        return;
+      }
+
+      captureStatusEl.textContent = `Capturing... ${status.remainingSeconds}s remaining, ${status.eventCount} request${status.eventCount === 1 ? "" : "s"} seen so far.`;
+    } catch (error) {
+      stopCapturePolling();
+      captureStatusEl.textContent = `Error: ${error.message || "Unknown error"}`;
+      captureStartButton.disabled = false;
+      captureStartButton.textContent = "Start Capture";
+    } finally {
+      capturePollInFlight = false;
+    }
+  }
+
+  async function startCapture() {
+    captureStartButton.disabled = true;
+    captureStartButton.textContent = "Stop Capture";
+    captureResultsEl.hidden = true;
+    captureStatusEl.textContent = "Starting...";
+
+    try {
+      const response = await postForm("csst_capture_start", {});
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data?.data?.message || "Could not start capture");
+      }
+
+      // Re-enable once capture is confirmed running, now as the "Stop
+      // Capture" control rather than "Start Capture" — without this it's
+      // stuck disabled for the whole window and can never actually be
+      // clicked to stop early.
+      captureStartButton.disabled = false;
+
+      stopCapturePolling();
+      capturePollTimerId = window.setInterval(pollCaptureStatus, 2000);
+      pollCaptureStatus();
+    } catch (error) {
+      captureStatusEl.textContent = `Error: ${error.message || "Unknown error"}`;
+      captureStartButton.disabled = false;
+      captureStartButton.textContent = "Start Capture";
+    }
+  }
+
+  async function stopCaptureEarly() {
+    // Disabled for the duration of this whole stop→report sequence: a rapid
+    // second click right after the first would otherwise see
+    // capturePollTimerId already cleared (below) and be misread as "not
+    // running" — routing it into startCapture() instead of being ignored.
+    captureStartButton.disabled = true;
+    stopCapturePolling();
+    try {
+      await postForm("csst_capture_stop", {});
+    } catch (error) {
+      // Falls through to fetchCaptureReport() regardless — the transient
+      // has a short expiry of its own either way, so worst case the report
+      // just reflects whatever was captured up to now.
+    }
+    await fetchCaptureReport();
+  }
+
+  function handleCaptureButtonClick() {
+    if (capturePollTimerId !== null) {
+      stopCaptureEarly();
+    } else {
+      startCapture();
     }
   }
 
@@ -1399,6 +1545,7 @@
   exportCsvButton.addEventListener("click", exportHistoryAsCsv);
   diagnosticsButton.addEventListener("click", runDiagnostics);
   refreshProcessesButton.addEventListener("click", loadProcesses);
+  captureStartButton.addEventListener("click", handleCaptureButtonClick);
   downloadKeepAliveButton.addEventListener("click", downloadKeepAliveScript);
   generateApiKeyButton.addEventListener("click", handleGenerateApiKey);
   revokeApiKeyButton.addEventListener("click", handleRevokeApiKey);
