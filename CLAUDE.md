@@ -5,7 +5,7 @@ Three codebases that together monitor a fleet of WordPress sites. They are separ
 ```
 controll-server-connection-speed-test/   WordPress plugin (v1.7.9)  — the data source, runs ON each monitored site
 controll-server-monitor/                 PHP dashboard (v1.1.0)     — the original consumer, now superseded
-controll-server-monitor-rs/              Rust: Windows Service + Tauri app (v0.1.6) — the current consumer
+controll-server-monitor-rs/              Rust: Windows Service + Tauri app (v0.1.9) — the current consumer
 ```
 
 **The contract between them** is `GET /wp-json/csst/v1/stats`, authenticated with a per-site key in the `X-CSST-Api-Key` header. The plugin serves it; both dashboards consume it. Change the payload on one side and both consumers need checking.
@@ -66,6 +66,11 @@ These all cost real time. Check here before debugging from scratch.
 
 - Querying service state needs only `CONNECT` + `QUERY_STATUS`, which unelevated users have. **Changing** state needs elevation. That asymmetry is why the tray menu can show live status silently but prompts for UAC on start/stop.
 - A logon-triggered *Scheduled Task* also requires elevation to register (this was verified, not assumed). The Scheduled Task approach was abandoned in favour of a real service anyway.
+
+### Probe frequency
+
+- **Probing too often gets flagged by registrars/hosts.** The dashboard (`common/static/assets/dashboard.js`) probes all sites once at startup, then every **3 min** (`POLL_INTERVAL_MS`). Only the **list view with one site selected** refreshes at **3 s** (`SINGLE_SITE_POLL_INTERVAL_MS`), and that probes just that one site. It used to be 2 s for every site, which caused the complaints (changed in v0.1.8). The service's background keep-alive is separate and runs every 5 minutes (`KEEP_ALIVE_INTERVAL_MINUTES` in `common/src/lib.rs`). Don't lower these without thinking about the hosts' rate limits.
+- **Always send a `User-Agent`.** Cyber Circuit's firewall rule `http-cms-bots` blocks the sender's IP for PHP requests with no User-Agent (this happened 2026-11, taking the user's sites offline for them until unblocked; they don't whitelist IPs). Both reqwest clients (`prober::client()` and the one in `keepalive::ping_one`) set `common::USER_AGENT` (`Controll-Monitor/<version>`). Any new outgoing client must do the same. Multi-site batches are also staggered by `SITE_REQUEST_STAGGER` (0.5 s) rather than fired simultaneously. The host's own advice was 1–5 minute check intervals, so the 3 min dashboard poll sits inside that range (the 3 s single-site list-view refresh is the one exception).
 
 ### Frontend
 

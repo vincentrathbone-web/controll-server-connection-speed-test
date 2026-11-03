@@ -1,7 +1,10 @@
 (function () {
   "use strict";
 
-  const POLL_INTERVAL_MS = 2000;
+  // Probing every site is what the registrar objects to, so the normal rate
+  // is slow. Only the one-site list view (a single request) polls quickly.
+  const POLL_INTERVAL_MS = 180000;
+  const SINGLE_SITE_POLL_INTERVAL_MS = 3000;
   const KEEPALIVE_POLL_INTERVAL_MS = 15000;
   const MAX_HISTORY_SAMPLES = 900;
   const METRICS = [
@@ -457,8 +460,11 @@
     if (timerId !== null || sites.length === 0) {
       return;
     }
+    // Immediate probe on start (app launch, view/site change, tab shown
+    // again), then the slow or fast cadence depending on what is on screen.
     pollAll();
-    timerId = window.setInterval(pollAll, POLL_INTERVAL_MS);
+    const singleSiteView = currentView === "list" && sitePicker && sitePicker.value;
+    timerId = window.setInterval(pollAll, singleSiteView ? SINGLE_SITE_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
   }
 
   function stopPolling() {

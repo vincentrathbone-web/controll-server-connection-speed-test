@@ -19,6 +19,16 @@ use tower_http::cors::{Any, CorsLayer};
 pub const DEFAULT_PORT: u16 = 8091;
 pub const KEEP_ALIVE_INTERVAL_MINUTES: u64 = 5;
 
+/// Sent on every outgoing request. Host firewalls (e.g. Cyber Circuit's
+/// `http-cms-bots` rule) treat PHP requests with no User-Agent as bots and
+/// block the sender's IP, so this must never be omitted.
+pub const USER_AGENT: &str = concat!("Controll-Monitor/", env!("CARGO_PKG_VERSION"));
+
+/// Gap between starting each site's request when a batch of sites is checked
+/// (dashboard "probe all" and the background keep-alive cycle), so the sites
+/// aren't all hit in the same instant.
+pub const SITE_REQUEST_STAGGER: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// All timestamps this backend hands to the frontend use this one format:
 /// unambiguous ISO 8601 UTC with an explicit "Z" suffix. `JSON.parse` +
 /// `new Date(...)` on the frontend then always reads it as UTC and reformats

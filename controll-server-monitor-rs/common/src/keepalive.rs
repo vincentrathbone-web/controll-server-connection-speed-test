@@ -61,6 +61,7 @@ async fn ping_one(site: Site) -> KeepAliveStatus {
     };
 
     let client = reqwest::Client::builder()
+        .user_agent(crate::USER_AGENT)
         .timeout(Duration::from_secs(30))
         .build()
         .expect("failed to build HTTP client");
@@ -131,8 +132,12 @@ async fn run_cycle(db: &Db, state: &KeepAliveState, log_path: &PathBuf) {
     };
 
     let mut set = JoinSet::new();
-    for site in sites {
-        set.spawn(ping_one(site));
+    for (index, site) in sites.into_iter().enumerate() {
+        let delay = crate::SITE_REQUEST_STAGGER * index as u32;
+        set.spawn(async move {
+            tokio::time::sleep(delay).await;
+            ping_one(site).await
+        });
     }
 
     while let Some(result) = set.join_next().await {

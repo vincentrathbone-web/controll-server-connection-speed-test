@@ -2,6 +2,16 @@
 
 All notable changes to this app are documented here.
 
+## [0.1.9] - 2026-11-03
+
+- The dashboard now probes all sites every **3 minutes** instead of every 30 seconds, in line with the 1–5 minute spacing the host recommended. The startup probe and the 3-second single-site refresh in list view are unchanged.
+
+## [0.1.8] - 2026-11-03
+
+- Dashboard probing is much gentler on hosts/registrars that rate-limit or flag frequent requests. Instead of probing every site every 2 seconds, the dashboard now probes all sites once at startup, then every 30 seconds. Only when the **list view** is showing a single selected site does it refresh that one site every 3 seconds. Switching views, changing the selected site, or returning to the window still triggers an immediate probe. The service's background keep-alive (every 5 minutes) is unchanged.
+- Every outgoing request now sends a `User-Agent` header (`Controll-Monitor/<version>`). Requests with no User-Agent were being flagged as bot traffic by a host firewall (`http-cms-bots`), which blocked the PC's IP address. Applies to both the stats probes and the keep-alive pings.
+- When several sites are checked in one go (dashboard "probe all" and the background keep-alive), the requests are now started 0.5 s apart instead of all at the same instant.
+
 ## [0.1.7] - 2026-08-29
 
 - The Windows Service is now hardened to reliably come back after a reboot or a crash:

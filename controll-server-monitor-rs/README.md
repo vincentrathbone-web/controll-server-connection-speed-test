@@ -10,7 +10,7 @@ Closing the app window hides it to the tray; the service keeps monitoring regard
 ## What it does
 
 - Same dashboard as the PHP version: Card view (all sites at a glance) and List view (one site, trend charts), same color-coded health stats, same disk/CPU/memory usage-vs-quota detail lines.
-- Polls registered sites' `/wp-json/csst/v1/stats` endpoints (from the **Controll Server Connection Speed Test** WordPress plugin) while the dashboard is open. Each site's card also shows its Duplicator Pro backup status and plugin version — a version behind the newest one currently seen across the fleet is flagged, so outdated installs are easy to spot.
+- Polls registered sites' `/wp-json/csst/v1/stats` endpoints (from the **Controll Server Connection Speed Test** WordPress plugin) while the dashboard is open — once at startup, then every 3 minutes, or every 3 seconds for the single site shown in list view. Each site's card also shows its Duplicator Pro backup status and plugin version — a version behind the newest one currently seen across the fleet is flagged, so outdated installs are easy to spot.
 - Pings every registered site's home page every 5 minutes, continuously, from the service. The OK/FAIL badge shows the real HTTP status (or connection error) returned, not just a bare pass/fail. Every ping is persisted (30-day retention) rather than only the most recent result — click a site's row in the Keep-Alive panel to expand its actual ping history. A desktop notification fires when a site's keep-alive transitions from OK to FAIL.
 - All timestamps display in 24-hour local time, converted from the UTC the backend stores.
 

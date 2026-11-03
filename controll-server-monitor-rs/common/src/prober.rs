@@ -5,6 +5,7 @@ use tokio::task::JoinSet;
 
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
+        .user_agent(crate::USER_AGENT)
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(10))
         .build()
@@ -81,8 +82,12 @@ fn describe_reqwest_error(err: &reqwest::Error) -> String {
 
 pub async fn probe_all(sites: Vec<Site>) -> Vec<ProbeResult> {
     let mut set = JoinSet::new();
-    for site in sites {
-        set.spawn(async move { probe(site.id, &site.label, &site.endpoint_url, &site.api_key).await });
+    for (index, site) in sites.into_iter().enumerate() {
+        let delay = crate::SITE_REQUEST_STAGGER * index as u32;
+        set.spawn(async move {
+            tokio::time::sleep(delay).await;
+            probe(site.id, &site.label, &site.endpoint_url, &site.api_key).await
+        });
     }
 
     let mut results = Vec::new();

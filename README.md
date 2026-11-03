@@ -83,7 +83,7 @@ Shared hosting gives you no control plane: no host-level monitoring, disk quota 
 - **Keep-Alive Script generator** — one click downloads a `.ps1` pre-baked with that site's URL, installs a Scheduled Task pinging it every 5 minutes
 - **Download Desktop App** link in the tab bar, pointing at this repo's latest release — so the companion app is discoverable from the plugin's own admin page, including once the plugin is distributed through the WordPress.org plugin directory rather than only from here
 
-### 🖥️ Desktop app + Windows Service (`controll-server-monitor-rs`, v0.1.6) — current
+### 🖥️ Desktop app + Windows Service (`controll-server-monitor-rs`, v0.1.9) — current
 
 - **Windows Service** (`ControllServerMonitor`) — owns the site registry, stats polling, and keep-alive pinging; starts at boot; runs whether or not anyone is logged in
 - **Tauri desktop app** — native window + tray icon; a thin client that only *looks at* the service
